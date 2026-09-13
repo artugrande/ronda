@@ -35,7 +35,10 @@ exigir_stellar || exit 127
 command -v node >/dev/null || { echo "falta node (>= 22.12) para el helper de drand" >&2; exit 127; }
 
 paso "Tests y build"
-cargo test -p pozo -p mock-rendimiento
+# Sin el test de escala: deposita 1.000 cuentas y tarda minutos sin imprimir
+# nada, y un deploy que parece colgado es peor que uno que tarda. Corre en
+# `cargo test` como siempre.
+cargo test -p pozo -p mock-rendimiento -- --skip ninguna_operacion_crece_con_la_cantidad_de_cuentas
 stellar contract build
 ls -l target/wasm32v1-none/release/pozo.wasm target/wasm32v1-none/release/mock_rendimiento.wasm
 
