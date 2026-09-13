@@ -50,8 +50,14 @@ for quien in admin ana beto cora; do
   if stellar keys address "ronda-$quien" >/dev/null 2>&1; then
     echo "  ronda-$quien ya existe"
   else
-    stellar keys generate --global "ronda-$quien" --network "$RED" --fund
-    echo "  ronda-$quien creada y fondeada"
+    stellar keys generate "ronda-$quien" --network "$RED"
+    echo "  ronda-$quien creada"
+  fi
+  # El friendbot rebota las cuentas que ya existen; eso no es un problema.
+  if stellar keys fund "ronda-$quien" --network "$RED" >/dev/null 2>&1; then
+    echo "    fondeada por el friendbot"
+  else
+    echo "    ya tenía fondos"
   fi
 done
 

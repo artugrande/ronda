@@ -5,3 +5,7 @@ target/
 # Los genera `cargo test` en cada corrida (soroban-sdk). Sirven para diffear
 # consumo de recursos, pero son ~24k líneas de JSON: se regeneran solos.
 test_snapshots/
+
+# Identidades del CLI de Stellar. Sin --global pueden quedar acá adentro, y
+# son claves secretas: nunca al repo, ni siquiera las de testnet.
+.stellar/
