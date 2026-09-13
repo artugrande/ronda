@@ -92,10 +92,16 @@ con dos intenciones, no acredita y lo deja para que lo mire una persona.
 # mano: la ventana es angosta, ver SETUP.md §Toolchain.
 cargo test && stellar contract build
 
-# front + indexer
-cd web && npm install && cp .env.example .env.local
+# front + indexer — necesita Node >= 22.12
+cd web && nvm use && npm install && cp .env.example .env.local
 npm test && npm run dev
 ```
+
+**Node 22.12 es piso duro, no recomendación.** Lo pide `@stellar/stellar-sdk`,
+así que en Node 20 queda fuera de soporte el SDK entero: el front y el indexer.
+`web/.npmrc` tiene `engine-strict=true` para que el `npm install` corte con un
+error en vez de dejar un warning que se pierde en el scroll, y `.nvmrc` fija la
+mayor para que `nvm use` haga lo correcto.
 
 Deploy (testnet primero, siempre):
 

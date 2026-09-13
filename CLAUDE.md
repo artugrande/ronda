@@ -46,6 +46,11 @@ era de una 2.x anterior— ni el constructor de la v1. Los módulos se importan 
 por uno desde subpaths (`@creit.tech/stellar-wallets-kit/modules/freighter`).
 Verificado contra `esm/sdk/kit.d.ts` de la 2.6.0; ver `web/src/lib/wallet.ts`.
 
+**Node >= 22.12**: lo pide `@stellar/stellar-sdk` en sus `engines`. En Node 20
+el `npm install` solo tira un `EBADENGINE` que se pierde en el scroll, y el SDK
+—o sea el front y el indexer— queda fuera de soporte. `web/.npmrc` tiene
+`engine-strict=true` para que eso corte en vez de avisar.
+
 **BigInt obligatorio**: los montos son `i128`. `create-next-app` pinea
 `target: ES2017` en el tsconfig, donde los literales `1n` no compilan. Subir a
 `ES2020` como mínimo. Si `tsc` sigue quejándose después de cambiarlo, borrá
