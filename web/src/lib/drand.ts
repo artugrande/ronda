@@ -24,12 +24,18 @@ export const QUICKNET = {
   esquema: "bls-unchained-g1-rfc9380",
 } as const;
 
+/**
+ * Lo que devuelve `/info`. La API v1 usa `hash` y `schemeID`; la v2 usa
+ * `chain_hash` y `scheme`. Se aceptan las dos formas.
+ */
 export type Info = {
   public_key: string;
   period: number;
   genesis_time: number;
-  hash: string;
-  schemeID: string;
+  hash?: string;
+  chain_hash?: string;
+  schemeID?: string;
+  scheme?: string;
 };
 
 export type Beacon = {
@@ -69,11 +75,20 @@ export async function info(fetchImpl: typeof fetch = fetch): Promise<Info> {
   const r = await fetchImpl(`${QUICKNET.url}/info`);
   if (!r.ok) throw new Error(`drand info: HTTP ${r.status}`);
   const j = (await r.json()) as Info;
-  if (j.hash !== QUICKNET.hash) {
-    throw new Error(`drand: el hash de la red no es el de quicknet: ${j.hash}`);
+  const hash = j.chain_hash ?? j.hash;
+  const esquema = j.scheme ?? j.schemeID;
+  // Si esto no cuadra, el error trae la respuesta entera: una clave de otra
+  // red que se cuele acá deja un pozo que nunca puede sortear.
+  if (hash !== QUICKNET.hash) {
+    throw new Error(
+      `drand: el hash de la red no es el de quicknet (${hash}). Respuesta: ${JSON.stringify(j)}`,
+    );
   }
-  if (j.schemeID !== QUICKNET.esquema) {
-    throw new Error(`drand: esquema inesperado ${j.schemeID}`);
+  if (esquema !== QUICKNET.esquema) {
+    throw new Error(`drand: esquema inesperado ${esquema}. Respuesta: ${JSON.stringify(j)}`);
+  }
+  if (!j.public_key || !j.genesis_time || !j.period) {
+    throw new Error(`drand: faltan campos en /info. Respuesta: ${JSON.stringify(j)}`);
   }
   return j;
 }
