@@ -1,3 +1,7 @@
 node_modules/
 target/
 !.claude/
+
+# Los genera `cargo test` en cada corrida (soroban-sdk). Sirven para diffear
+# consumo de recursos, pero son ~24k líneas de JSON: se regeneran solos.
+test_snapshots/

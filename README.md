@@ -26,33 +26,37 @@ Hackathon 12 → 26/09/2026 · Checkpoints 21 y 24/09 · Submission 27/09
 - ✅ Investigación cerrada, producto definido
 - ✅ Workspace Soroban scaffoldeado y compilando a WASM
 - ✅ 8 skills oficiales de Stellar incluidas en `.claude/skills/`
-- ⬜ Contrato `ronda` — `contracts/ronda/src/lib.rs` es todavía el hello-world
+- ✅ Contrato `ronda` — turnos, aportes nativos, atribución cross-chain por
+  monto etiquetado, morosos y reembolso. 21 tests en verde
+- ⬜ **Deploy en testnet** ← nada de esto se corrió contra la red todavía
 - ⬜ Indexer de `oft_received`
 - ⬜ Frontend
 - ⬜ **Ensayo de USDT0 en mainnet** ← hacelo primero, ver abajo
 
-## Convertirlo en su propio repo de GitHub
+## El contrato
 
-Esta carpeta está preparada para vivir sola. Desde tu máquina:
+`contracts/ronda/src/lib.rs`. Cinco entrypoints:
 
-```bash
-# 1. Traete el branch donde quedó todo
-git clone https://github.com/artugrande/zorritoclaude.git
-cd zorritoclaude
-git checkout claude/intelligent-edison-ma2om1
+| Función | Qué hace |
+|---|---|
+| `crear_ronda(oraculo, token, orden, monto_turno, periodo)` | `orden` es a la vez la lista de miembros y el orden de cobro. Rechaza montos cuyo 7º decimal no sea cero |
+| `acreditar(ronda_id, miembro)` | Aporte nativo: el miembro firma y transfiere al contrato |
+| `registrar_intencion(ronda_id, miembro)` | Devuelve el monto etiquetado único a mandar desde otra cadena. Idempotente |
+| `confirmar_oft(ronda_id, monto_recibido, guid)` | Solo el oráculo. Machea el monto exacto contra la intención pendiente |
+| `ejecutar_turno(ronda_id)` | Permissionless una vez vencido el período. Marca morosos, paga al titular lo que se juntó |
+| `estado(ronda_id)` | Quién pagó, de quién es el turno, quiénes deben |
 
-# 2. Extraé abc/ como repo independiente
-cp -r abc ../ronda
-cd ../ronda
-rm -rf node_modules target
-git init && git add -A && git commit -m "Ronda: initial import"
+Tres decisiones que vale la pena conocer antes de tocarlo:
 
-# 3. Creá el repo en GitHub y pusheá
-gh repo create ronda --private --source=. --push
-```
-
-A partir de ahí, `claude` desde `../ronda` levanta `CLAUDE.md` y las 8 skills
-de Stellar solo.
+- **La etiqueta vive en el 6º decimal.** El paso es de 10 stroops, nunca 1: el
+  OFT recorta el 7º decimal antes de armar el mensaje.
+- **El contador de etiquetas no rebobina.** Una etiqueta liberada no se reusa en
+  el turno siguiente, así que una entrega cross-chain que llega tarde no puede
+  acreditarse al miembro equivocado.
+- **El turno paga lo que se juntó, no el nominal.** El que no aporta queda
+  moroso, pierde su turno futuro, y el incumplimiento queda on-chain. Si no
+  queda nadie con derecho a cobrar, el turno en curso se reembolsa y la ronda
+  cierra sin plata atrapada en el contrato.
 
 ## Setup local
 
@@ -60,6 +64,12 @@ de Stellar solo.
 rustup target add wasm32v1-none
 npm install
 stellar contract build && cargo test
+```
+
+Deploy (testnet primero, siempre):
+
+```bash
+scripts/deploy.sh testnet <identidad>   # stellar keys ls
 ```
 
 Para el CLI usá el binario precompilado, **no `cargo install`** (falla en un
