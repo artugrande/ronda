@@ -28,10 +28,18 @@ Hackathon 12 → 26/09/2026 · Checkpoints 21 y 24/09 · Submission 27/09
 - ✅ 8 skills oficiales de Stellar incluidas en `.claude/skills/`
 - ✅ Contrato `ronda` — turnos, aportes nativos, atribución cross-chain por
   monto etiquetado, morosos y reembolso. 21 tests en verde
+- ✅ Frontend mobile-first en `web/` — conectar wallet, aportar, pedir monto
+  etiquetado, cerrar turno. Buildea limpio
+- ✅ Indexer de entregas cross-chain en `web/scripts/indexer.ts`, con la lógica
+  de atribución aislada y con tests
 - ⬜ **Deploy en testnet** ← nada de esto se corrió contra la red todavía
-- ⬜ Indexer de `oft_received`
-- ⬜ Frontend
 - ⬜ **Ensayo de USDT0 en mainnet** ← hacelo primero, ver abajo
+
+> **Lo que falta es exactamente lo que necesita red.** Todo el código compila,
+> typechequea y pasa tests, pero **nunca se ejecutó contra un RPC de Stellar**:
+> se escribió en una sesión con el egress a `*.stellar.org` bloqueado. Tratá el
+> primer `deploy.sh testnet` como el primer test de integración, no como un
+> trámite.
 
 ## El contrato
 
@@ -58,12 +66,34 @@ Tres decisiones que vale la pena conocer antes de tocarlo:
   queda nadie con derecho a cobrar, el turno en curso se reembolsa y la ronda
   cierra sin plata atrapada en el contrato.
 
+## El frontend y el indexer
+
+`web/` es una app Next.js mobile-first —la ronda se arma en el grupo de
+WhatsApp y se entra desde el teléfono— más el indexer que cierra la pata
+cross-chain.
+
+```
+web/src/lib/montos.ts       stroops ↔ texto, y el guard del 7º decimal
+web/src/lib/atribucion.ts   a quién corresponde una entrega. Puro, con tests
+web/src/lib/contrato.ts     cliente del contrato: lecturas y ciclo de escritura
+web/src/lib/wallet.ts       Stellar Wallets Kit, con import dinámico por el SSR
+web/scripts/indexer.ts      mira los eventos del token y llama a confirmar_oft
+```
+
+`atribucion.ts` es puro a propósito: es la parte que, si se equivoca, acredita
+la plata de uno a otro. Nunca adivina — si el monto no machea exacto, o machea
+con dos intenciones, no acredita y lo deja para que lo mire una persona.
+
 ## Setup local
 
 ```bash
+# contrato
 rustup target add wasm32v1-none
-npm install
-stellar contract build && cargo test
+cargo test && stellar contract build
+
+# front + indexer
+cd web && npm install && cp .env.example .env.local
+npm test && npm run dev
 ```
 
 Deploy (testnet primero, siempre):
@@ -71,6 +101,17 @@ Deploy (testnet primero, siempre):
 ```bash
 scripts/deploy.sh testnet <identidad>   # stellar keys ls
 ```
+
+Después poné el contract id en `web/.env.local` y arrancá el indexer **sin la
+key del oráculo** hasta haber comparado su salida contra el explorer:
+
+```bash
+cd web && SOLO_MIRAR=1 npm run indexer
+```
+
+El frontend está listo para Vercel: importás el repo, root directory `web`, y
+las variables `NEXT_PUBLIC_*` de `.env.example`. El indexer no va a Vercel —es
+un proceso largo, no una función— así que correlo donde puedas tener un daemon.
 
 Para el CLI usá el binario precompilado, **no `cargo install`** (falla en un
 build script de `libdbus-sys`). Ver [SETUP.md](SETUP.md).

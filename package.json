@@ -8,8 +8,5 @@
     "test": "cargo test",
     "build": "stellar contract build",
     "deploy:testnet": "scripts/deploy.sh testnet"
-  },
-  "dependencies": {
-    "@stellar/stellar-sdk": "^17.0.1"
   }
 }

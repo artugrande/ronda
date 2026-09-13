@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fbfaf8;
+  --foreground: #1a1814;
+  --tenue: #6b6558;
+  --borde: #e4dfd5;
+  --panel: #ffffff;
+  --acento: #b4541e;
+  --ok: #2f6b46;
+  --alerta: #9a3412;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #14120f;
+    --foreground: #f0ece4;
+    --tenue: #9a9284;
+    --borde: #2c2721;
+    --panel: #1c1915;
+    --acento: #e08a52;
+    --ok: #6fbd8e;
+    --alerta: #e88a6a;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-tenue: var(--tenue);
+  --color-borde: var(--borde);
+  --color-panel: var(--panel);
+  --color-acento: var(--acento);
+  --color-ok: var(--ok);
+  --color-alerta: var(--alerta);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Los montos son lo único que se compara dígito a dígito: tabulares siempre. */
+.cifra {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}

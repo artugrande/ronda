@@ -20,9 +20,24 @@ const server = new rpc.Server('https://soroban-testnet.stellar.org');
 
 - `rpc`, NO `SorobanRpc` (el modelo va a escribir v13 por defecto)
 - `rpc.assembleTransaction()`, no el helper viejo
-- Stellar Wallets Kit v2 usa `StellarWalletsKit.build(config)`, no el constructor v1
 - Usar `Networks.TESTNET` / `Networks.PUBLIC`, nunca un passphrase hardcodeado
   (un mismatch da `tx_bad_auth`, que parece error de red pero no lo es)
+
+**Stellar Wallets Kit**: en la 2.6 es una clase **estática** que se inicializa
+con `StellarWalletsKit.init({ modules, network })`. No es `build(config)` —eso
+era de una 2.x anterior— ni el constructor de la v1. Los módulos se importan uno
+por uno desde subpaths (`@creit.tech/stellar-wallets-kit/modules/freighter`).
+Verificado contra `esm/sdk/kit.d.ts` de la 2.6.0; ver `web/src/lib/wallet.ts`.
+
+**BigInt obligatorio**: los montos son `i128`. `create-next-app` pinea
+`target: ES2017` en el tsconfig, donde los literales `1n` no compilan. Subir a
+`ES2020` como mínimo. Si `tsc` sigue quejándose después de cambiarlo, borrá
+`tsconfig.tsbuildinfo`: el caché incremental se queda con el target viejo.
+
+**`rpc.Server.queryContract(id, metodo, args)`** (SDK 16+) resuelve el spec
+desde el wasm desplegado y decodifica el resultado solo. Para lecturas evita
+hand-rollear el decoding de ScVal —structs, `Option`, enums unitarios— que es
+donde se cometen los errores silenciosos.
 
 ## Ciclo de transacción obligatorio
 
