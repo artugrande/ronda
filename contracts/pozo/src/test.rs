@@ -563,3 +563,55 @@ fn no_se_inicializa_dos_veces() {
     mesa.c()
         .inicializar(&cfg.admin, &cfg.keeper, &cfg.token, &cfg.fuente, &SEMANA);
 }
+
+#[test]
+fn un_commit_vencido_no_deja_el_pozo_trabado() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+
+    // El keeper commitea y después desaparece hasta que vence la ventana.
+    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
+    mesa.ledgers(EXPIRA_LEDGERS + 1);
+
+    // Tiene que poder rearrancar el sorteo. Si esto explota, el pozo queda
+    // trabado para siempre: no se puede ejecutar (vencido) ni recommitear.
+    let ganador = mesa.sortear(2);
+    assert_eq!(ganador, mesa.u(0));
+}
+
+#[test]
+fn el_capital_sale_aunque_haya_un_commit_colgado() {
+    // Lo que garantiza que un keeper ausente no pueda atrapar plata de nadie:
+    // retirar no pasa por el keeper ni por el admin.
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
+
+    c.retirar(&mesa.u(0), &CIEN);
+    assert_eq!(mesa.saldo(0), FONDEO, "el capital sale igual");
+}
+
+#[test]
+fn el_admin_puede_rotar_un_keeper_ausente() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+
+    // El keeper commitea y se pierde con el secreto.
+    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
+    mesa.ledgers(EXPIRA_LEDGERS + 1);
+
+    let nuevo = Address::generate(&mesa.env);
+    c.cambiar_keeper(&nuevo);
+    assert_eq!(c.config().keeper, nuevo);
+
+    // Y el keeper nuevo puede cerrar la ronda con su propio secreto.
+    let ganador = mesa.sortear(9);
+    assert_eq!(ganador, mesa.u(0));
+    assert!(mesa.saldo(0) > FONDEO - CIEN, "el premio se pagó");
+}

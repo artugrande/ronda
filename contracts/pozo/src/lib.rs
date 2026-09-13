@@ -353,8 +353,17 @@ impl Contract {
         let cfg = config(&env);
         cfg.keeper.require_auth();
 
-        if env.storage().instance().has(&Clave::Sorteo) {
-            panic_with_error!(&env, Error::YaHayCommit);
+        // Un commit vencido se puede reemplazar. Sin esto el pozo queda
+        // trabado: no se puede ejecutar porque venció, ni commitear de nuevo
+        // porque ya hay uno, y el premio no lo cobra nadie nunca.
+        //
+        // Reemplazar no le da al keeper una forma de grindear: como no puede
+        // previsualizar el resultado, dejar vencer un commit a propósito no le
+        // dice nada sobre quién iba a ganar.
+        if let Some(s) = env.storage().instance().get::<_, Sorteo>(&Clave::Sorteo) {
+            if env.ledger().sequence() <= s.ledger + EXPIRA_LEDGERS {
+                panic_with_error!(&env, Error::YaHayCommit);
+            }
         }
         let ahora = env.ledger().timestamp();
         if ahora < cierra_at(&env) {
@@ -463,6 +472,24 @@ impl Contract {
         inst.extend_ttl(BUMP_UMBRAL, BUMP_EXTENSION);
 
         ganador
+    }
+
+    /// Rota el keeper. Solo el admin.
+    ///
+    /// Existe por un problema de liveness, no de confianza: el secreto de un
+    /// commit lo conoce únicamente el keeper, así que si desaparece nadie puede
+    /// ejecutar ese sorteo y el premio queda sin cobrar para siempre.
+    ///
+    /// El capital nunca está en juego acá: `retirar` no depende del keeper ni
+    /// del admin, y funciona aunque haya un commit colgado.
+    pub fn cambiar_keeper(env: Env, nuevo: Address) {
+        let mut cfg = config(&env);
+        cfg.admin.require_auth();
+        cfg.keeper = nuevo;
+        env.storage().instance().set(&Clave::Config, &cfg);
+        env.storage()
+            .instance()
+            .extend_ttl(BUMP_UMBRAL, BUMP_EXTENSION);
     }
 
     // -- Lecturas -----------------------------------------------------------
