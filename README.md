@@ -58,8 +58,16 @@ Peso = **depósito × tiempo**. Entrar un minuto antes del cierre con diez veces
 más plata da menos chances que haber estado toda la ronda. La fuente de
 rendimiento va detrás de una interfaz mínima (`depositar`, `retirar`,
 `balance`): `contracts/mock_rendimiento/` es la de tests y demo, Blend se
-enchufa detrás sin tocar el sorteo. Costo medido del sorteo con el pozo lleno
-(200 participantes): ~38M instrucciones sobre un límite de 100M.
+enchufa detrás sin tocar el sorteo. **Escala a un millón de cuentas desde el día cero.** Ninguna operación lee a
+todos los participantes: cada cuenta es una entrada de storage y las chances
+viven en un Fenwick tree sobre storage con capacidad 2^20. Depositar, retirar y
+sortear tocan a lo sumo 21 nodos cada uno, haya diez cuentas o un millón. El
+peso depósito × tiempo entra en el árbol por linealidad (`a·T − b`, dos
+coeficientes que suman por prefijos), y al cerrar no se copia nada: la ronda
+nueva arranca en el cierre y las chances de la cerrada quedan congeladas en el
+árbol por versionado perezoso. Medido: el footprint de un depósito es de 23–30
+escrituras con 1 o con 1.001 cuentas, y el sorteo con 1.001 cuentas cuesta 45M
+instrucciones sobre un límite de 100M por transacción.
 
 ```bash
 scripts/ensayo-pozo-testnet.sh     # fuente mock + pozo con la clave real de drand
@@ -73,7 +81,8 @@ cd web && SOLO_MIRAR=1 npm run keeper
 - ✅ 8 skills oficiales de Stellar incluidas en `.claude/skills/`
 - ✅ **Contrato `pozo`** — depósitos, retiro libre, peso depósito × tiempo,
   sorteo por firma de drand verificada on-chain (BLS12-381), sin roles
-  privilegiados. 32 tests, costo del sorteo medido
+  privilegiados, Fenwick tree sobre storage con capacidad para un millón de
+  cuentas. 35 tests, footprint y costo medidos
 - ✅ Keeper permissionless del pozo (`web/scripts/keeper.ts`) y helper que
   descomprime la clave de drand para el deploy
 - ⬜ **Deploy del pozo en testnet** ← el primer sorteo real es el primer test

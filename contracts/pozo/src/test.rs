@@ -4,7 +4,7 @@ use super::*;
 use soroban_sdk::{
     crypto::bls12_381::Bls12381Fr,
     testutils::{Address as _, Ledger as _},
-    token, Env, U256,
+    token, Env, Vec, U256,
 };
 
 #[allow(clippy::inconsistent_digit_grouping)]
@@ -388,29 +388,81 @@ fn bls_acepta_la_firma_legitima_y_rechaza_el_resto() {
 }
 
 #[test]
-fn el_sorteo_con_el_pozo_lleno_entra_en_una_transaccion() {
-    // La verificación BLS es lo más caro que hace el contrato, y el barrido de
-    // boletos crece con los participantes. Esto mide el peor caso —el pozo al
-    // tope— contra el límite de CPU por transacción de la red, que es lo que
-    // decide si `ejecutar_sorteo` puede fallar on-chain por presupuesto.
+fn ninguna_operacion_crece_con_la_cantidad_de_cuentas() {
+    // Lo que hace que esto escale: depositar, retirar y sortear tocan
+    // LOG_CAPACIDAD nodos del árbol cada uno, sea que haya diez cuentas o un
+    // millón. Se mide el costo de cada operación con el pozo chico y con
+    // muchas cuentas más, y tiene que ser el mismo dentro de un margen. El
+    // sorteo además se compara con el límite de CPU por transacción de la red.
     extern crate std;
     const LIMITE_CPU_RED: u64 = 100_000_000;
+    // Alcanza con que sean muchas más que las que caben en el camino del
+    // descenso: los nodos tocados son los mismos con 10 que con un millón, lo
+    // que cambia es cuántos existen. Mil mantiene el test bajo el minuto.
+    const MUCHAS: u32 = 1_000;
 
     let mesa = montar(0);
     let c = mesa.c();
     let mut budget = mesa.env.cost_estimate().budget();
-
-    // Llenar el pozo excede el presupuesto de una transacción, pero son muchas
-    // transacciones distintas: acá se levanta el límite solo para el armado.
-    budget.reset_unlimited();
     let acuñador = token::StellarAssetClient::new(&mesa.env, &mesa.token);
-    for _ in 0..MAX_PARTICIPANTES {
+    let nueva = || {
         let a = Address::generate(&mesa.env);
-        acuñador.mint(&a, &CIEN);
-        c.depositar(&a, &CIEN);
+        acuñador.mint(&a, &(CIEN * 2));
+        a
+    };
+
+    // Lo que la red cobra de verdad es el footprint: cuántas entradas y cuántos
+    // bytes lee y escribe la transacción. Eso es lo que tiene que quedar igual.
+    //
+    // Las instrucciones que reporta el harness NO sirven para comparar entre
+    // tamaños: el host de tests guarda el ledger entero en un mapa medido y le
+    // cobra a cada acceso la búsqueda sobre todas las entradas que existen.
+    // En la red la transacción declara sus claves y el host carga exactamente
+    // esas; no hay búsqueda que pagar. Se imprimen igual, como cota superior.
+    struct Medida {
+        cpu: i64,
+        mem: i64,
+        lecturas: u32,
+        escrituras: u32,
     }
-    assert_eq!(c.estado().participantes, MAX_PARTICIPANTES);
+    // Recursos de la última invocación, tal como los vería la red.
+    let medir = || {
+        let r = mesa.env.cost_estimate().resources();
+        Medida {
+            cpu: r.instructions,
+            mem: r.mem_bytes,
+            lecturas: r.disk_read_entries + r.memory_read_entries,
+            escrituras: r.write_entries,
+        }
+    };
+
+    // Un depósito y un retiro con el pozo casi vacío.
+    let a0 = nueva();
+    budget.reset_default();
+    c.depositar(&a0, &CIEN);
+    let dep_chico = medir();
+    budget.reset_default();
+    c.retirar(&a0, &(CIEN / 2));
+    let ret_chico = medir();
+
+    // Muchas cuentas más. Son muchas transacciones distintas; acá se levanta
+    // el límite solo para el armado.
+    budget.reset_unlimited();
+    for _ in 0..MUCHAS {
+        c.depositar(&nueva(), &CIEN);
+    }
+    assert_eq!(c.estado().participantes, MUCHAS + 1);
+
+    let a1 = nueva();
+    budget.reset_default();
+    c.depositar(&a1, &CIEN);
+    let dep_grande = medir();
+    budget.reset_default();
+    c.retirar(&a1, &(CIEN / 2));
+    let ret_grande = medir();
+
     mesa.avanzar(SEMANA);
+    budget.reset_unlimited();
     let ronda_drand = c.cerrar_ronda();
     mesa.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
     let firma = mesa.firmar(ronda_drand);
@@ -418,15 +470,126 @@ fn el_sorteo_con_el_pozo_lleno_entra_en_una_transaccion() {
     // El sorteo, bajo el presupuesto real de una transacción.
     budget.reset_default();
     c.ejecutar_sorteo(&firma);
-    let cpu = budget.cpu_instruction_cost();
-    let mem = budget.memory_bytes_cost();
-    std::println!(
-        "ejecutar_sorteo con {MAX_PARTICIPANTES} participantes: {cpu} instrucciones, {mem} bytes"
+    let sorteo = medir();
+
+    let linea = |q: &str, m: &Medida| {
+        std::println!(
+            "{q:<28} {:>3} lecturas {:>3} escrituras {:>10} instr {:>9} B mem",
+            m.lecturas,
+            m.escrituras,
+            m.cpu,
+            m.mem
+        );
+    };
+    linea("depositar, 1 cuenta", &dep_chico);
+    linea("depositar, 1001 cuentas", &dep_grande);
+    linea("retirar, 1 cuenta", &ret_chico);
+    linea("retirar, 1001 cuentas", &ret_grande);
+    linea("ejecutar_sorteo, 1001", &sorteo);
+
+    // El footprint está acotado por una constante que no depende de cuántas
+    // cuentas haya: a lo sumo LOG_CAPACIDAD + 1 nodos del árbol (el índice 1
+    // es el peor caso, está en los 21 niveles; los demás en menos) más un
+    // puñado fijo de entradas: la cuenta, su dirección, la instancia, los
+    // saldos del token y la fuente. Por eso con más cuentas puede tocar
+    // MENOS entradas, nunca más que la cota.
+    const NODOS: u32 = LOG_CAPACIDAD + 1;
+    const COTA_ESCRITURAS: u32 = NODOS + 12;
+    const COTA_LECTURAS: u32 = NODOS + 16;
+    for (q, m) in [
+        ("depositar chico", &dep_chico),
+        ("depositar grande", &dep_grande),
+        ("retirar chico", &ret_chico),
+        ("retirar grande", &ret_grande),
+    ] {
+        assert!(
+            m.escrituras <= COTA_ESCRITURAS,
+            "{q}: {} escrituras",
+            m.escrituras
+        );
+        assert!(m.lecturas <= COTA_LECTURAS, "{q}: {} lecturas", m.lecturas);
+    }
+    // El sorteo desciende LOG_CAPACIDAD nodos y escribe casi nada.
+    assert!(
+        sorteo.lecturas <= NODOS + 10,
+        "sorteo: {} lecturas",
+        sorteo.lecturas
     );
     assert!(
-        cpu < LIMITE_CPU_RED,
-        "el sorteo no entra en una transacción: {cpu} >= {LIMITE_CPU_RED}"
+        sorteo.escrituras <= 8,
+        "sorteo: {} escrituras",
+        sorteo.escrituras
     );
+    // Y aun con el medidor pesimista del harness, todo entra en una transacción.
+    for (q, m) in [
+        ("depositar", &dep_grande),
+        ("retirar", &ret_grande),
+        ("sorteo", &sorteo),
+    ] {
+        assert!(
+            (m.cpu as u64) < LIMITE_CPU_RED,
+            "{q} no entra en una transacción: {} >= {LIMITE_CPU_RED}",
+            m.cpu
+        );
+    }
+}
+
+#[test]
+fn la_capacidad_es_un_millon() {
+    assert_eq!(CAPACIDAD, 1_048_576);
+    assert_eq!(1u32 << LOG_CAPACIDAD, CAPACIDAD);
+}
+
+#[test]
+fn el_indice_no_se_reusa_y_una_cuenta_vacia_sigue_pudiendo_ganar() {
+    // Retirar todo al final de la ronda no borra el peso ya devengado: la
+    // cuenta queda con depósito 0 pero sus chances de esa ronda siguen, y si
+    // gana cobra igual. Es la promesa de "la plata estuvo generando".
+    let mesa = montar(1);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+    c.retirar(&mesa.u(0), &CIEN);
+    assert_eq!(
+        c.estado().participantes,
+        0,
+        "sin capital no cuenta como activa"
+    );
+    assert!(
+        c.chances_bps(&mesa.u(0)) > 9_000,
+        "pero el peso devengado sigue"
+    );
+
+    let ganador = mesa.sortear();
+    assert_eq!(ganador, mesa.u(0));
+    assert!(
+        mesa.saldo(0) > FONDEO,
+        "cobró el premio con el capital ya afuera"
+    );
+}
+
+#[test]
+fn un_participante_pasivo_pesa_desde_el_inicio_de_cada_ronda() {
+    // Nadie tiene que "renovar" nada: el que deposita una vez y no vuelve a
+    // tocar la cuenta pesa en cada ronda desde su inicio. Es lo que garantiza
+    // la versión perezosa de `b` en los nodos.
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.depositar(&mesa.u(1), &CIEN);
+    mesa.avanzar(SEMANA);
+    mesa.sortear();
+
+    // Ronda nueva: la cuenta 1 vuelve a tocar (retira y redeposita), la 0 no.
+    mesa.avanzar(SEMANA / 2);
+    c.retirar(&mesa.u(1), &CIEN);
+    c.depositar(&mesa.u(1), &CIEN);
+    mesa.avanzar(SEMANA / 2);
+
+    // Las dos estuvieron con el mismo capital todo el tiempo: mismas chances.
+    let p0 = c.chances_bps(&mesa.u(0));
+    let p1 = c.chances_bps(&mesa.u(1));
+    assert!((p0 - p1).abs() <= 1, "pasivo {p0} vs activo {p1}");
 }
 
 #[test]
@@ -638,7 +801,7 @@ fn el_pozo_sigue_generando_ronda_tras_ronda() {
         c.depositar(&mesa.u(i), &CIEN);
     }
 
-    for ronda in 0..3u32 {
+    for ronda in 1..=3u32 {
         mesa.avanzar(SEMANA);
         assert_eq!(c.estado().ronda, ronda);
         let premio = c.estado().premio;
@@ -646,7 +809,7 @@ fn el_pozo_sigue_generando_ronda_tras_ronda() {
         mesa.sortear();
     }
 
-    assert_eq!(c.estado().ronda, 3);
+    assert_eq!(c.estado().ronda, 4);
     assert_eq!(c.estado().principal, CIEN * 3, "el capital nunca se movió");
 }
 
@@ -678,6 +841,7 @@ fn la_vista_trae_lo_que_muestra_la_pantalla() {
     let c = mesa.c();
 
     let v = c.estado();
+    assert_eq!(v.ronda, 1, "las rondas arrancan en 1; el 0 es 'nunca'");
     assert_eq!(v.participantes, 0);
     assert_eq!(v.principal, 0);
     assert_eq!(v.premio, 0);

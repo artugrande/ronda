@@ -46,8 +46,17 @@ bajes a 1.91.0 por más que el mensaje del SDK diga que alcanza.
   `Error(Budget, ExceededLimit)`; dentro del contrato cada transacción trae el
   suyo. `env.cost_estimate().budget()` devuelve un valor que hay que ligar con
   `let mut` para poder `reset_unlimited()` / `reset_default()`.
-- **Costo medido**: `ejecutar_sorteo` con 200 participantes (1 pairing + el
-  barrido) = ~38M instrucciones sobre un límite de 100M por transacción.
+- **Costo medido**: `ejecutar_sorteo` con 1.001 cuentas (1 pairing + descenso
+  de 20 nodos) = ~45M instrucciones sobre un límite de 100M por transacción.
+- **Las instrucciones del harness NO sirven para medir escala.** El host de
+  tests guarda el ledger entero en un `MeteredOrdMap` respaldado por un `Vec`
+  ordenado, y cobra a cada acceso una búsqueda/memmove sobre todas las entradas
+  que existen: un depósito pasa de 1,8M a 43M instrucciones y de 300 KB a
+  19 MB de memoria con 1.000 cuentas aunque toque *menos* entradas. En la red
+  la transacción declara su footprint y el host carga solo eso. Para afirmar
+  que algo escala, medí `env.cost_estimate().resources()` —
+  `disk_read_entries + memory_read_entries` y `write_entries` — que es lo que
+  la red cobra, y acotalo por una constante.
 
 ## Reglas de SDK que el modelo suele equivocar
 
