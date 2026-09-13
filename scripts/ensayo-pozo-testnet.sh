@@ -114,15 +114,33 @@ echo "  extendido"
 paso "Estado inicial"
 stellar contract invoke --id "$POZO" --source pozo-admin --network "$RED" -- estado
 
+paso "Escribiendo web/.env.local"
+# Se conserva el KEEPER_SECRET que ya hubiera; si no hay, se usa pozo-cora,
+# que es la identidad que no deposita: solo paga fees de cierre y sorteo.
+ENV_LOCAL=web/.env.local
+KEEPER_SECRET=""
+if [[ -f "$ENV_LOCAL" ]]; then
+  KEEPER_SECRET=$(sed -n 's/^KEEPER_SECRET=//p' "$ENV_LOCAL" | head -n 1)
+fi
+[[ -n "$KEEPER_SECRET" ]] || KEEPER_SECRET=$(stellar keys secret pozo-cora)
+cat >"$ENV_LOCAL" <<ENV
+# Escrito por scripts/ensayo-pozo-testnet.sh. No se sube a git.
+NEXT_PUBLIC_RED=$RED
+NEXT_PUBLIC_POZO=$POZO
+
+# keeper
+RPC_URL=https://soroban-testnet.stellar.org
+PASSPHRASE="Test SDF Network ; September 2015"
+POZO=$POZO
+FUENTE=$FUENTE
+KEEPER_SECRET=$KEEPER_SECRET
+ENV
+echo "  $ENV_LOCAL apunta al pozo nuevo (keeper: $CORA)"
+
 cat <<FIN
 
 ─────────────────────────────────────────────────────────────────
-Listo. Pegá esto en web/.env.local:
-
-NEXT_PUBLIC_RED=testnet
-NEXT_PUBLIC_POZO=$POZO
-
-Y para el keeper, en el mismo archivo:
+Listo. web/.env.local ya apunta a este pozo.
 
 POZO=$POZO
 FUENTE=$FUENTE
