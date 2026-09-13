@@ -87,8 +87,8 @@ con dos intenciones, no acredita y lo deja para que lo mire una persona.
 ## Setup local
 
 ```bash
-# contrato
-rustup target add wasm32v1-none
+# contrato — rust-toolchain.toml fija rustc 1.91 (el mínimo de soroban-sdk 27)
+# y el target wasm32v1-none. rustup los instala solo al entrar al repo.
 cargo test && stellar contract build
 
 # front + indexer

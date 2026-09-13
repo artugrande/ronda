@@ -20,9 +20,16 @@ rm -rf /tmp/sds
 
 ## Toolchain
 
+**Rust no necesita setup manual.** `rust-toolchain.toml` fija rustc 1.91.0 —el
+mínimo de `soroban-sdk` 27— y el target `wasm32v1-none`; rustup instala los dos
+solo al entrar al repo.
+
+Si no tenés rustup y usás el Rust del sistema, el pin no aplica y cargo corta
+con `rustc X is not supported by the following packages` recién después de bajar
+178 crates. Instalá rustup desde https://rustup.rs y el problema desaparece.
+
 ```bash
-rustup target add wasm32v1-none   # target de compilación Soroban
-npm install @stellar/stellar-sdk  # cliente TS v14
+cd web && npm install    # front + indexer
 ```
 
 Para el CLI, **usá el binario precompilado, no `cargo install`**: compilar desde

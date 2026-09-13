@@ -26,13 +26,12 @@ if [[ -z "$IDENTIDAD" ]]; then
   exit 2
 fi
 
-if ! command -v stellar >/dev/null 2>&1; then
-  echo "falta el CLI de stellar. Usá el binario precompilado, no cargo install." >&2
-  echo "Ver SETUP.md §Toolchain." >&2
-  exit 127
-fi
-
 cd "$(dirname "$0")/.."
+
+# shellcheck source=scripts/preflight.sh
+source scripts/preflight.sh
+exigir_rustc || exit 1
+exigir_stellar || exit 127
 
 echo "==> Tests"
 cargo test

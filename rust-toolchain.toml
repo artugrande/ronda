@@ -1,0 +1,13 @@
+# soroban-sdk 27 pide rustc 1.91 como mínimo. Con un toolchain más viejo, cargo
+# corta con "rustc X is not supported by the following packages" antes de
+# compilar una sola línea.
+#
+# Fijarlo acá hace que rustup instale y use esta versión solo al entrar al
+# repo, sin que nadie tenga que acordarse de correr `rustup update`.
+#
+# Verificado: 21 tests, wasm32v1-none, clippy sin warnings y fmt limpio en
+# 1.91.0 exacto. Si subís soroban-sdk y vuelve a fallar por MSRV, subí esto.
+[toolchain]
+channel = "1.91.0"
+targets = ["wasm32v1-none"]
+components = ["clippy", "rustfmt"]

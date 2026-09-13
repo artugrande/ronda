@@ -28,10 +28,10 @@ cd "$(dirname "$0")/.."
 
 paso() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
-command -v stellar >/dev/null || {
-  echo "falta el CLI de stellar. Ver SETUP.md §Toolchain." >&2
-  exit 127
-}
+# shellcheck source=scripts/preflight.sh
+source scripts/preflight.sh
+exigir_rustc || exit 1
+exigir_stellar || exit 127
 
 if (( MONTO <= 0 || MONTO % 10 != 0 )); then
   echo "MONTO tiene que ser positivo y terminar en 0." >&2
