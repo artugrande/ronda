@@ -114,9 +114,19 @@ type Llegada = { monto: bigint; guid: string; ledger: number };
  *
  * Van tres alternativas porque la forma del topic cambia:
  *
- *   transfer      ["transfer", from, to]              (3 topics)
- *   transfer      ["transfer", from, to, asset]       (4, protocolos nuevos)
- *   oft_received  ["oft_received", guid, src_eid, to] (4)
+ *   transfer      ["transfer", from, to]              (3 topics, protocolos viejos)
+ *   transfer      ["transfer", from, to, asset]       (4) ← VERIFICADO en testnet
+ *   oft_received  ["oft_received", guid, src_eid, to] (4) ← sin verificar
+ *
+ * La de 4 con el asset es la que emite hoy la SAC. Capturada de un aporte real
+ * al contrato, con el monto en el data y no en un topic:
+ *
+ *   [{"symbol":"transfer"},{"address":"GC5ZK…"},
+ *    {"address":"CDM257…"},{"string":"native"}] = {"i128":"100000000"}
+ *
+ * La de `oft_received` sale de la skill `stellar-cross-chain`, no de una
+ * captura: no hay USDT0 en testnet. Confirmala contra el primer evento real de
+ * mainnet antes de confiar en ella.
  */
 function filtros(): rpc.Api.EventFilter[] {
   const base: rpc.Api.EventFilter = { type: "contract", contractIds: [TOKEN] };
