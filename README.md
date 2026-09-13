@@ -99,8 +99,18 @@ npm test && npm run dev
 Deploy (testnet primero, siempre):
 
 ```bash
+# El ensayo completo: identidades fondeadas, deploy, y una ronda de 3 creada.
+# Imprime al final lo que va en web/.env.local.
+scripts/ensayo-testnet.sh
+
+# O solo el deploy, si ya tenés identidades:
 scripts/deploy.sh testnet <identidad>   # stellar keys ls
 ```
+
+El ensayo usa el SAC de **XLM nativo**, no USDC. Toda cuenta de testnet tiene
+XLM del friendbot y no necesita trustline; USDC te obliga a crear trustlines
+para cada miembro y a elegir bien el issuer (Circle vs. Blend — mezclarlos falla
+en silencio, ver `CLAUDE.md`). Pasá a USDC cuando el flujo ya ande.
 
 Después poné el contract id en `web/.env.local` y arrancá el indexer **sin la
 key del oráculo** hasta haber comparado su salida contra el explorer:
