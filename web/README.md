@@ -12,7 +12,8 @@ npm run dev
 
 | Comando | |
 |---|---|
-| `npm run dev` | la app en http://localhost:3000 |
+| `npm run dev` | la app en http://localhost:3000 — `/` es el pozo, `/ronda` la ronda rotativa |
+| `npm run keeper` | cierra rondas del pozo y trae la firma de drand (arrancalo con `SOLO_MIRAR=1`) |
 | `npm test` | tests de la lógica de atribución y montos |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run indexer` | el watcher de `oft_received` (arrancalo con `SOLO_MIRAR=1`) |

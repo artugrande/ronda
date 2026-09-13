@@ -29,3 +29,7 @@ export const CONTRATO = process.env.NEXT_PUBLIC_CONTRATO || "";
 export const RONDA_ID = Number(process.env.NEXT_PUBLIC_RONDA_ID || "0");
 
 export const configurado = CONTRATO.length > 0;
+
+/** Contract id del `pozo` desplegado. Vacío hasta que haya deploy. */
+export const POZO = process.env.NEXT_PUBLIC_POZO || "";
+export const pozoConfigurado = POZO.length > 0;

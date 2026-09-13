@@ -1,29 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CONTRATO, RED, RONDA_ID, configurado } from "@/lib/config";
+import { POZO, RED, pozoConfigurado } from "@/lib/config";
 import {
-  acreditar,
-  ejecutarTurno,
+  apyTexto,
+  chancesBps,
+  depositar,
   estado,
-  intencionDe,
-  registrarIntencion,
-  type Miembro,
+  retirar,
+  saldo,
   type Vista,
-} from "@/lib/contrato";
-import { aTexto } from "@/lib/montos";
+} from "@/lib/pozo";
+import { aStroops, aTexto } from "@/lib/montos";
 import { conectar, direccionActual, firmar } from "@/lib/wallet";
-import { CrossChain } from "@/components/CrossChain";
 import { Boton, Error as Aviso, Etiqueta, Panel, corta } from "@/components/ui";
 
-type Accion = null | "aportar" | "intencion" | "turno" | "conectar";
+type Accion = null | "depositar" | "retirar" | "conectar";
+
+/** Cada cuántos segundos se relee el contrato. El premio crece solo. */
+const REFRESCO_S = 20;
 
 /**
- * Segundos desde epoch, refrescados cada segundo.
- *
- * Va en estado y no leído en render: si se lee `Date.now()` al renderizar, el
- * "turno vencido" solo se entera de que venció cuando algo más provoca un
- * re-render, y el botón para cerrarlo no aparece hasta que la persona recarga.
+ * Segundos desde epoch, refrescados cada segundo. Va en estado y no leído en
+ * render, si no el countdown y el "vencido" solo se enteran cuando algo más
+ * provoca un re-render.
  */
 function useAhora(): number {
   const [ahora, setAhora] = useState(() => Math.floor(Date.now() / 1000));
@@ -37,35 +37,42 @@ function useAhora(): number {
 export default function Home() {
   const [yo, setYo] = useState<string | null>(null);
   const [vista, setVista] = useState<Vista | null>(null);
-  const [etiquetado, setEtiquetado] = useState<bigint | null>(null);
+  const [miSaldo, setMiSaldo] = useState<bigint>(0n);
+  const [misChances, setMisChances] = useState<number>(0);
+  const [monto, setMonto] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [accion, setAccion] = useState<Accion>(null);
-  const [cargandoVista, setCargandoVista] = useState(true);
+  const [cargando, setCargando] = useState(true);
   const ahora = useAhora();
 
-  const refrescar = useCallback(
-    async (direccion: string | null) => {
-      if (!configurado) return;
-      try {
-        const v = await estado(RONDA_ID);
-        setVista(v);
-        setEtiquetado(direccion ? await intencionDe(RONDA_ID, direccion) : null);
-        setError(null);
-      } catch (e) {
-        setError(mensaje(e));
-      } finally {
-        setCargandoVista(false);
-      }
-    },
-    [],
-  );
+  const refrescar = useCallback(async (direccion: string | null) => {
+    if (!pozoConfigurado) return;
+    try {
+      const [v, s, ch] = await Promise.all([
+        estado(),
+        direccion ? saldo(direccion) : Promise.resolve(0n),
+        direccion ? chancesBps(direccion) : Promise.resolve(0),
+      ]);
+      setVista(v);
+      setMiSaldo(s);
+      setMisChances(ch);
+      setError(null);
+    } catch (e) {
+      setError(mensaje(e));
+    } finally {
+      setCargando(false);
+    }
+  }, []);
 
   useEffect(() => {
+    let direccion: string | null = null;
     (async () => {
-      const direccion = await direccionActual();
+      direccion = await direccionActual();
       setYo(direccion);
       await refrescar(direccion);
     })();
+    const t = setInterval(() => refrescar(direccion), REFRESCO_S * 1000);
+    return () => clearInterval(t);
   }, [refrescar]);
 
   async function correr(cual: Exclude<Accion, null>, fn: () => Promise<void>) {
@@ -80,21 +87,24 @@ export default function Home() {
     }
   }
 
-  const miembro = vista?.miembros.find((m) => m.addr === yo) ?? null;
-  const debeAportar = Boolean(yo && vista?.pendientes.includes(yo));
-  const turnoVencido =
-    vista != null &&
-    vista.estado === "EnCurso" &&
-    BigInt(ahora) >= vista.proximoTurnoAt;
+  function montoValido(): bigint | null {
+    const m = aStroops(monto);
+    if (m == null || m <= 0n) {
+      setError("Poné un monto válido, con hasta 7 decimales.");
+      return null;
+    }
+    return m;
+  }
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 px-4 py-6 sm:py-10">
       <header className="mb-6 flex items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Ronda</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Pozo</h1>
+          <p className="text-xs text-tenue">Ahorrá. Nadie pierde. Uno gana el rendimiento.</p>
+        </div>
         <div className="flex items-center gap-2">
-          <Etiqueta tono={RED === "mainnet" ? "alerta" : "neutro"}>
-            {RED}
-          </Etiqueta>
+          <Etiqueta tono={RED === "mainnet" ? "alerta" : "neutro"}>{RED}</Etiqueta>
           {yo ? (
             <Etiqueta tono="ok">{corta(yo)}</Etiqueta>
           ) : (
@@ -114,7 +124,7 @@ export default function Home() {
         </div>
       </header>
 
-      {!configurado && <SinDeploy />}
+      {!pozoConfigurado && <SinDeploy />}
 
       {error && (
         <div className="mb-4">
@@ -122,217 +132,184 @@ export default function Home() {
         </div>
       )}
 
-      {configurado && cargandoVista && (
-        <p className="text-sm text-tenue">Leyendo el contrato…</p>
+      {pozoConfigurado && cargando && (
+        <p className="text-sm text-tenue">Leyendo el pozo…</p>
       )}
 
       {vista && (
         <div className="space-y-4">
-          <Resumen vista={vista} ahora={ahora} />
+          <Premio vista={vista} ahora={ahora} />
+          <Cifras vista={vista} />
 
-          {vista.estado === "EnCurso" && yo && miembro && (
-            <>
-              {debeAportar && miembro.estado !== "Moroso" && (
-                <Panel
-                  titulo="Tu aporte de este turno"
-                  pie={`Se transfieren ${aTexto(vista.montoTurno)} desde tu cuenta en Stellar.`}
-                >
-                  <Boton
-                    onClick={() =>
-                      correr("aportar", async () => {
-                        await acreditar(RONDA_ID, yo, firmar);
-                        await refrescar(yo);
-                      })
-                    }
-                    cargando={accion === "aportar"}
+          {yo && (
+            <Panel titulo="Tu posición">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-tenue">Tu capital</p>
+                  <p className="cifra mt-1 text-2xl font-semibold">{aTexto(miSaldo)}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-tenue">Tu probabilidad</p>
+                  <p className="cifra mt-1 text-2xl font-semibold">
+                    {(misChances / 100).toFixed(2)}
+                    <span className="text-base text-tenue"> %</span>
+                  </p>
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-tenue">
+                Pesa lo que pusiste y por cuánto tiempo. Entrar recién sobre el cierre
+                casi no suma.
+              </p>
+
+              <div className="mt-4 flex gap-2">
+                <input
+                  inputMode="decimal"
+                  placeholder="Monto"
+                  value={monto}
+                  onChange={(e) => setMonto(e.target.value)}
+                  className="cifra min-w-0 flex-1 rounded-xl border border-borde bg-background px-4 py-3 text-base outline-none focus:border-acento"
+                />
+                {miSaldo > 0n && (
+                  <button
+                    onClick={() => setMonto(aTexto(miSaldo, 7))}
+                    className="shrink-0 rounded-xl border border-borde px-3 text-sm text-tenue"
                   >
-                    Aportar {aTexto(vista.montoTurno)}
-                  </Boton>
-                </Panel>
-              )}
-
-              {debeAportar && miembro.estado !== "Moroso" && (
-                <CrossChain
-                  etiquetado={etiquetado}
-                  montoTurno={vista.montoTurno}
-                  cargando={accion === "intencion"}
-                  onPedir={() =>
-                    correr("intencion", async () => {
-                      await registrarIntencion(RONDA_ID, yo, firmar);
+                    todo
+                  </button>
+                )}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Boton
+                  onClick={() =>
+                    correr("depositar", async () => {
+                      const m = montoValido();
+                      if (m == null) return;
+                      await depositar(yo, m, firmar);
+                      setMonto("");
                       await refrescar(yo);
                     })
                   }
-                />
-              )}
-
-              {!debeAportar && miembro.estado !== "Moroso" && (
-                <Panel>
-                  <p className="text-sm text-tenue">
-                    Ya aportaste este turno. Falta que aporten{" "}
-                    {vista.pendientes.length}.
-                  </p>
-                </Panel>
-              )}
-
-              {miembro.estado === "Moroso" && (
-                <Panel titulo="Quedaste afuera">
-                  <p className="text-sm text-tenue">
-                    No aportaste a tiempo, así que perdiste tu turno de cobro y
-                    no podés seguir aportando. Tenés{" "}
-                    {miembro.incumplimientos}{" "}
-                    {miembro.incumplimientos === 1
-                      ? "incumplimiento"
-                      : "incumplimientos"}{" "}
-                    registrados on-chain.
-                  </p>
-                </Panel>
-              )}
-            </>
-          )}
-
-          {vista.estado === "EnCurso" && yo && turnoVencido && (
-            <Panel
-              titulo="El turno está vencido"
-              pie="Lo puede cerrar cualquiera. Paga lo que se haya juntado y marca a los que no aportaron."
-            >
-              <Boton
-                variante="secundario"
-                onClick={() =>
-                  correr("turno", async () => {
-                    await ejecutarTurno(RONDA_ID, yo, firmar);
-                    await refrescar(yo);
-                  })
-                }
-                cargando={accion === "turno"}
-              >
-                Cerrar el turno
-              </Boton>
+                  cargando={accion === "depositar"}
+                  disabled={accion !== null}
+                >
+                  Depositar
+                </Boton>
+                <Boton
+                  variante="secundario"
+                  onClick={() =>
+                    correr("retirar", async () => {
+                      const m = montoValido();
+                      if (m == null) return;
+                      if (m > miSaldo) {
+                        setError(`Tenés ${aTexto(miSaldo)} en el pozo, no más.`);
+                        return;
+                      }
+                      await retirar(yo, m, firmar);
+                      setMonto("");
+                      await refrescar(yo);
+                    })
+                  }
+                  cargando={accion === "retirar"}
+                  disabled={accion !== null || miSaldo === 0n}
+                >
+                  Retirar
+                </Boton>
+              </div>
+              <p className="mt-3 text-xs text-tenue">
+                Retirás cuando quieras, sin penalidad, aunque haya un sorteo en
+                curso. Tu capital nunca está en juego.
+              </p>
             </Panel>
           )}
 
-          <Miembros vista={vista} yo={yo} />
+          {!yo && (
+            <Panel>
+              <p className="text-sm text-tenue">
+                Conectá una wallet para depositar y ver tu probabilidad.
+              </p>
+            </Panel>
+          )}
+
+          <ComoFunciona />
         </div>
       )}
     </main>
   );
 }
 
-function Resumen({ vista, ahora }: { vista: Vista; ahora: number }) {
-  const finalizada = vista.estado === "Finalizada";
+function Premio({ vista, ahora }: { vista: Vista; ahora: number }) {
+  const faltan = Number(vista.cierraAt) - ahora;
+
+  let estadoTexto: string;
+  let tono: "neutro" | "ok" | "alerta" = "neutro";
+  if (vista.sorteoPendiente) {
+    estadoTexto = `cerrada · esperando drand #${vista.rondaDrand ?? "?"}`;
+    tono = "ok";
+  } else if (faltan <= 0) {
+    estadoTexto = "vencida · esperando cierre";
+    tono = "alerta";
+  } else {
+    estadoTexto = `se sortea en ${duracion(faltan)}`;
+  }
+
   return (
     <Panel>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-wider text-tenue">
-            {finalizada ? "Ronda terminada" : `Turno ${vista.turno + 1}`}
-          </p>
-          <p className="cifra mt-1 text-3xl font-semibold tracking-tight">
-            {aTexto(vista.pozo)}
-          </p>
-          <p className="mt-1 text-sm text-tenue">
-            juntado de{" "}
-            <span className="cifra">
-              {aTexto(vista.montoTurno * BigInt(vista.miembros.length))}
-            </span>
-          </p>
-        </div>
-        {!finalizada && <Cuenta hasta={vista.proximoTurnoAt} ahora={ahora} />}
+      <p className="text-xs uppercase tracking-wider text-tenue">
+        {vista.sorteoPendiente ? "Premio de la ronda" : "Premio en juego"}
+        <span className="cifra"> · ronda {vista.ronda}</span>
+      </p>
+      <p className="cifra mt-1 text-4xl font-semibold tracking-tight">{aTexto(vista.premio)}</p>
+      <div className="mt-3">
+        <Etiqueta tono={tono}>{estadoTexto}</Etiqueta>
       </div>
-
-      {!finalizada && vista.beneficiario && (
-        <p className="mt-4 border-t border-borde pt-3 text-sm">
-          <span className="text-tenue">Cobra </span>
-          <span className="font-medium">{corta(vista.beneficiario, 6)}</span>
-        </p>
-      )}
+      <p className="mt-3 text-sm text-tenue">
+        Es el rendimiento que generó el pozo entero. Uno se lo lleva; los demás
+        siguen con exactamente lo que pusieron.
+      </p>
     </Panel>
   );
 }
 
-function Cuenta({ hasta, ahora }: { hasta: bigint; ahora: number }) {
-  const faltan = Number(hasta) - ahora;
-  if (faltan <= 0) {
-    return <Etiqueta tono="alerta">vencido</Etiqueta>;
-  }
-
-  const dias = Math.floor(faltan / 86400);
-  const horas = Math.floor((faltan % 86400) / 3600);
-  const minutos = Math.floor((faltan % 3600) / 60);
-
+function Cifras({ vista }: { vista: Vista }) {
+  const apy = apyTexto(vista.apyBps);
   return (
-    <div className="text-right">
-      <p className="text-xs uppercase tracking-wider text-tenue">cierra en</p>
-      <p className="cifra mt-1 text-lg font-medium">
-        {dias > 0 ? `${dias}d ${horas}h` : `${horas}h ${minutos}m`}
-      </p>
+    <div className="grid grid-cols-3 gap-2">
+      <Cifra etiqueta="Participan" valor={String(vista.participantes)} />
+      <Cifra etiqueta="Depositado" valor={aTexto(vista.principal, 0)} />
+      <Cifra etiqueta="APY" valor={apy ?? "—"} pie={apy ? "Blend" : "sin datos aún"} />
     </div>
   );
 }
 
-function Miembros({ vista, yo }: { vista: Vista; yo: string | null }) {
+function Cifra({ etiqueta, valor, pie }: { etiqueta: string; valor: string; pie?: string }) {
   return (
-    <Panel titulo={`Miembros (${vista.miembros.length})`}>
-      <ul className="divide-y divide-borde">
-        {vista.miembros.map((m, i) => (
-          <Fila
-            key={m.addr}
-            m={m}
-            posicion={i}
-            esTurno={i === vista.turno && vista.estado === "EnCurso"}
-            soyYo={m.addr === yo}
-            pendiente={vista.pendientes.includes(m.addr)}
-          />
-        ))}
-      </ul>
-    </Panel>
+    <div className="rounded-2xl border border-borde bg-panel px-3 py-3">
+      <p className="text-[11px] uppercase tracking-wider text-tenue">{etiqueta}</p>
+      <p className="cifra mt-1 truncate text-lg font-semibold">{valor}</p>
+      {pie && <p className="text-[11px] text-tenue">{pie}</p>}
+    </div>
   );
 }
 
-function Fila({
-  m,
-  posicion,
-  esTurno,
-  soyYo,
-  pendiente,
-}: {
-  m: Miembro;
-  posicion: number;
-  esTurno: boolean;
-  soyYo: boolean;
-  pendiente: boolean;
-}) {
+function ComoFunciona() {
   return (
-    <li className="flex items-center justify-between gap-3 py-3">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">
-          <span className="cifra mr-2 text-tenue">{posicion + 1}</span>
-          {corta(m.addr, 6)}
-          {soyYo && <span className="ml-2 text-xs text-acento">vos</span>}
-        </p>
-        <p className="mt-0.5 text-xs text-tenue">
-          aportó <span className="cifra">{aTexto(m.aportado)}</span>
-          {m.cobrado > 0n && (
-            <>
-              {" · cobró "}
-              <span className="cifra">{aTexto(m.cobrado)}</span>
-            </>
-          )}
-        </p>
-      </div>
-      <div className="shrink-0">
-        {m.estado === "Moroso" ? (
-          <Etiqueta tono="alerta">
-            {m.incumplimientos > 1 ? `${m.incumplimientos} faltas` : "moroso"}
-          </Etiqueta>
-        ) : m.estado === "Cobro" ? (
-          <Etiqueta tono="ok">cobró</Etiqueta>
-        ) : pendiente ? (
-          <Etiqueta tono={esTurno ? "alerta" : "neutro"}>debe</Etiqueta>
-        ) : (
-          <Etiqueta tono="ok">al día</Etiqueta>
-        )}
-      </div>
-    </li>
+    <Panel titulo="Cómo funciona">
+      <ol className="space-y-2 text-sm text-tenue">
+        <li>
+          <span className="font-medium text-foreground">Depositás.</span> Tu plata va a
+          generar rendimiento junto con la de todos.
+        </li>
+        <li>
+          <span className="font-medium text-foreground">Cada ronda se sortea el rendimiento.</span>{" "}
+          Uno se lo lleva entero. Los demás no pierden nada: su capital sigue ahí.
+        </li>
+        <li>
+          <span className="font-medium text-foreground">El azar viene de afuera.</span> Lo
+          decide drand, un beacon público de ~20 organizaciones, y el contrato verifica la
+          firma. Ni nosotros ni la red podemos elegir al ganador.
+        </li>
+      </ol>
+    </Panel>
   );
 }
 
@@ -340,21 +317,30 @@ function SinDeploy() {
   return (
     <Panel titulo="Falta el contrato">
       <p className="text-sm text-tenue">
-        No hay ningún contrato configurado todavía. Desplegalo y apuntá la app
-        ahí:
+        No hay ningún pozo configurado todavía. Desplegalo y apuntá la app ahí:
       </p>
       <pre className="mt-3 overflow-x-auto rounded-xl border border-borde bg-background p-3 text-xs leading-relaxed">
-        {`scripts/deploy.sh testnet <identidad>
+        {`scripts/ensayo-pozo-testnet.sh
 
 # después, en web/.env.local
-NEXT_PUBLIC_CONTRATO=C...
+NEXT_PUBLIC_POZO=C...
 NEXT_PUBLIC_RED=testnet`}
       </pre>
       <p className="mt-3 text-xs text-tenue">
-        Valor actual: <code className="cifra">{CONTRATO || "(vacío)"}</code>
+        Valor actual: <code className="cifra">{POZO || "(vacío)"}</code>
       </p>
     </Panel>
   );
+}
+
+function duracion(segundos: number): string {
+  const d = Math.floor(segundos / 86400);
+  const h = Math.floor((segundos % 86400) / 3600);
+  const m = Math.floor((segundos % 3600) / 60);
+  const s = segundos % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${s}s`;
 }
 
 function mensaje(e: unknown): string {

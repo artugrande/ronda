@@ -156,14 +156,25 @@ export const bytes32 = (hex: string) =>
  * Saltear la simulación produce fallos crípticos, y `sendTransaction` devuelve
  * PENDING: sin el poll no sabés si entró.
  */
-export async function invocar(
+export function invocar(
+  fuente: string,
+  metodo: string,
+  args: xdr.ScVal[],
+  firmar: Firmante,
+): Promise<string> {
+  return invocarEn(CONTRATO, fuente, metodo, args, firmar);
+}
+
+/** Lo mismo, contra cualquier contrato. El pozo y la ronda comparten el ciclo. */
+export async function invocarEn(
+  contratoId: string,
   fuente: string,
   metodo: string,
   args: xdr.ScVal[],
   firmar: Firmante,
 ): Promise<string> {
   const cuenta = await servidor.getAccount(fuente);
-  const contrato = new Contract(CONTRATO);
+  const contrato = new Contract(contratoId);
 
   const tx = new TransactionBuilder(
     new Account(cuenta.accountId(), cuenta.sequenceNumber()),

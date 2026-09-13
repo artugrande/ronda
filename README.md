@@ -87,7 +87,9 @@ cd web && SOLO_MIRAR=1 npm run keeper
   descomprime la clave de drand para el deploy
 - ⬜ **Deploy del pozo en testnet** ← el primer sorteo real es el primer test
   de la verificación BLS con una firma de drand de verdad
-- ⬜ Frontend del pozo: participantes, total, APY, premio, countdown
+- ✅ Frontend del pozo en `web/` (`/`): premio en juego, countdown, participantes,
+  total, APY, tu capital y tu probabilidad, depositar y retirar. La ronda
+  rotativa quedó en `/ronda`
 - ⬜ Adapter real de Blend detrás de la interfaz de la fuente
 - ✅ Contrato `ronda` — turnos, aportes nativos, atribución cross-chain por
   monto etiquetado, morosos y reembolso. 21 tests en verde
