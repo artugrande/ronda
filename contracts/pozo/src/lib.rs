@@ -367,6 +367,17 @@ impl Contract {
         invocar_fuente(&env, &cfg, "depositar", monto);
 
         let ronda = ronda(&env);
+        // Un pozo sin nadie adentro no tiene reloj: la ronda arranca con el
+        // primero que entra. Si no, una ronda que venció vacía se cerraría un
+        // segundo después del primer depósito. Se reinicia solo cuando nadie
+        // tiene peso en la ronda (ni capital ni tiempo devengado), así que a
+        // ningún participante le cambia nada.
+        if principal(&env) == 0 && total_b(&env, ronda) == 0 {
+            let ahora = env.ledger().timestamp();
+            let inst = env.storage().instance();
+            inst.set(&Clave::RondaDesde, &ahora);
+            inst.set(&Clave::CierraAt, &(ahora + cfg.periodo));
+        }
         let t = t_ronda(&env);
         let mut c = match cuenta(&env, &usuario) {
             Some(c) => c,

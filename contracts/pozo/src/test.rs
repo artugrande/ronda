@@ -728,6 +728,52 @@ fn no_se_cierra_un_pozo_vacio() {
 }
 
 #[test]
+fn una_ronda_que_vencio_vacia_arranca_con_el_primero_que_entra() {
+    let mesa = montar(2);
+    let c = mesa.c();
+
+    // Nadie entra durante toda la semana: la ronda vence vacía.
+    mesa.avanzar(SEMANA + 3_600);
+    c.depositar(&mesa.u(0), &CIEN);
+
+    // No se cierra al instante: el reloj arrancó con el depósito.
+    let v = c.estado();
+    assert_eq!(v.cierra_at, mesa.env.ledger().timestamp() + SEMANA);
+    let r = c.try_cerrar_ronda();
+    assert!(r.is_err(), "la ronda recién arrancó, no puede cerrarse");
+
+    mesa.avanzar(SEMANA);
+    c.depositar(&mesa.u(1), &CIEN);
+    assert!(
+        c.chances_bps(&mesa.u(0)) > 9_900,
+        "el primero tuvo la semana entera; el segundo entró al final"
+    );
+    mesa.sortear();
+}
+
+#[test]
+fn el_reloj_no_se_reinicia_si_alguien_ya_tiene_peso() {
+    let mesa = montar(2);
+    let c = mesa.c();
+
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA / 2);
+    // Sale con todo: capital cero, pero media semana de peso devengado.
+    c.retirar(&mesa.u(0), &CIEN);
+    let cierra = c.estado().cierra_at;
+
+    c.depositar(&mesa.u(1), &CIEN);
+    assert_eq!(
+        c.estado().cierra_at,
+        cierra,
+        "el pozo está vacío pero alguien ya devengó peso: la ronda sigue"
+    );
+    mesa.avanzar(SEMANA / 2);
+    assert_eq!(c.chances_bps(&mesa.u(0)), 5_000);
+    assert_eq!(c.chances_bps(&mesa.u(1)), 5_000);
+}
+
+#[test]
 fn depositar_despues_del_cierre_no_cambia_esa_ronda() {
     let mesa = montar(3);
     let c = mesa.c();
