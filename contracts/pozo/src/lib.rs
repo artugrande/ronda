@@ -903,8 +903,18 @@ fn mezclar_entropia(env: &Env, quien: &Address, monto: i128) {
 fn invocar_fuente(env: &Env, cfg: &Config, metodo: &str, monto: i128) {
     let yo = env.current_contract_address();
 
-    let sub = if metodo == "depositar" {
-        vec![
+    // La llamada directa a la fuente no necesita autorización: el que invoca
+    // autoriza lo que invoca. Lo que sí hay que autorizar es lo que la fuente
+    // hace *en nuestro nombre* un nivel más abajo: al depositar, ella mueve
+    // nuestros tokens con `token.transfer(pozo, fuente, monto)`.
+    //
+    // El árbol que se registra acá tiene como raíz ese `transfer`, no la
+    // llamada a la fuente. El host nunca consulta este árbol para el frame
+    // directo, así que un árbol con `fuente.depositar` de raíz y el transfer
+    // colgando no se entra nunca y el transfer queda sin autorizar. Se
+    // descubrió en testnet: en los tests solo lo detecta `mock_all_auths()`.
+    if metodo == "depositar" {
+        env.authorize_as_current_contract(vec![
             env,
             InvokerContractAuthEntry::Contract(SubContractInvocation {
                 context: ContractContext {
@@ -914,22 +924,8 @@ fn invocar_fuente(env: &Env, cfg: &Config, metodo: &str, monto: i128) {
                 },
                 sub_invocations: vec![env],
             }),
-        ]
-    } else {
-        vec![env]
-    };
-
-    env.authorize_as_current_contract(vec![
-        env,
-        InvokerContractAuthEntry::Contract(SubContractInvocation {
-            context: ContractContext {
-                contract: cfg.fuente.clone(),
-                fn_name: Symbol::new(env, metodo),
-                args: (yo.clone(), monto).into_val(env),
-            },
-            sub_invocations: sub,
-        }),
-    ]);
+        ]);
+    }
 
     env.invoke_contract::<()>(
         &cfg.fuente,

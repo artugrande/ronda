@@ -16,9 +16,11 @@ struct Mesa {
 
 fn montar() -> Mesa {
     let env = Env::default();
-    // El adapter firma en su propio nombre el transfer anidado que hace el
-    // pool; eso no es una autorización raíz y mock_all_auths() la rechaza.
-    env.mock_all_auths_allowing_non_root_auth();
+    // `mock_all_auths()` a secas, a propósito: es el único modo que exige que
+    // el transfer anidado que hace el pool en nombre del adapter esté cubierto
+    // por `authorize_as_current_contract`. El modo `allowing_non_root_auth`
+    // lo daría por autorizado y escondería un árbol mal armado.
+    env.mock_all_auths();
 
     let emisor = Address::generate(&env);
     let token = env.register_stellar_asset_contract_v2(emisor).address();
@@ -133,7 +135,7 @@ fn el_dueno_se_fija_una_sola_vez() {
 #[should_panic(expected = "Error(Contract, #1)")]
 fn sin_dueno_no_se_deposita() {
     let env = Env::default();
-    env.mock_all_auths_allowing_non_root_auth();
+    env.mock_all_auths();
     let token = env
         .register_stellar_asset_contract_v2(Address::generate(&env))
         .address();

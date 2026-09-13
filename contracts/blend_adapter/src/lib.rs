@@ -114,34 +114,21 @@ impl Contract {
 
         // submit(from, spender, to, requests): `from` es la posición que se
         // toca, `spender` pone los tokens, `to` los recibe. Los tres somos
-        // nosotros para un Supply. El pool va a hacer token.transfer(yo, pool,
-        // monto) con nuestra autoridad, y ese transfer anidado hay que
-        // autorizarlo explícitamente.
+        // nosotros para un Supply. La llamada a `submit` no necesita
+        // autorización (el que invoca autoriza), pero adentro el pool hace
+        // token.transfer(yo, pool, monto) con nuestra autoridad, y ese
+        // transfer es lo que hay que autorizar: va como raíz del árbol, no
+        // colgando de `submit`. El host no consulta este árbol para el frame
+        // directo, así que colgarlo de `submit` lo dejaría sin usar.
         env.authorize_as_current_contract(vec![
             &env,
             InvokerContractAuthEntry::Contract(SubContractInvocation {
                 context: ContractContext {
-                    contract: pool.clone(),
-                    fn_name: Symbol::new(&env, "submit"),
-                    args: (
-                        yo.clone(),
-                        yo.clone(),
-                        yo.clone(),
-                        pedidos(&env, SUPPLY, &token, monto),
-                    )
-                        .into_val(&env),
+                    contract: token.clone(),
+                    fn_name: Symbol::new(&env, "transfer"),
+                    args: (yo.clone(), pool.clone(), monto).into_val(&env),
                 },
-                sub_invocations: vec![
-                    &env,
-                    InvokerContractAuthEntry::Contract(SubContractInvocation {
-                        context: ContractContext {
-                            contract: token.clone(),
-                            fn_name: Symbol::new(&env, "transfer"),
-                            args: (yo.clone(), pool.clone(), monto).into_val(&env),
-                        },
-                        sub_invocations: vec![&env],
-                    }),
-                ],
+                sub_invocations: vec![&env],
             }),
         ]);
 

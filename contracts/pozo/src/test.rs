@@ -88,10 +88,12 @@ fn firmar_con(env: &Env, sk: &Bls12381Fr, ronda: u64) -> BytesN<96> {
 
 fn montar_con_clave(n: u32, semilla_sk: u32) -> Mesa {
     let env = Env::default();
-    // El pozo autoriza su propia llamada a la fuente con
-    // `authorize_as_current_contract`, y eso anida un require_auth que
-    // `mock_all_auths()` rechaza por no ser raíz.
-    env.mock_all_auths_allowing_non_root_auth();
+    // `mock_all_auths()` a secas, a propósito. La fuente mueve tokens del pozo
+    // un nivel más abajo, y este es el único modo de test que exige que ese
+    // transfer esté cubierto por `authorize_as_current_contract`. Con
+    // `mock_all_auths_allowing_non_root_auth()` el árbol mal armado que llegó
+    // a testnet pasaba todos los tests.
+    env.mock_all_auths();
     env.ledger().with_mut(|l| {
         l.timestamp = ARRANQUE;
         l.sequence_number = 1_000;
@@ -947,7 +949,7 @@ fn no_se_deposita_cero() {
 #[test]
 fn el_pozo_funciona_con_blend_como_fuente() {
     let env = Env::default();
-    env.mock_all_auths_allowing_non_root_auth();
+    env.mock_all_auths();
     env.ledger().with_mut(|l| {
         l.timestamp = ARRANQUE;
         l.sequence_number = 1_000;

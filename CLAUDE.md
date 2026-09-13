@@ -38,9 +38,14 @@ bajes a 1.91.0 por más que el mensaje del SDK diga que alcanza.
   test de Rust chequea curva + subgrupo, el de TS chequea los bytes exactos.
 - **Un contrato que firma en su propio nombre para una llamada anidada** (el
   pozo llamando a la fuente, que a su vez mueve el token) necesita
-  `env.authorize_as_current_contract(...)` con el árbol completo. En tests eso
-  exige `mock_all_auths_allowing_non_root_auth()`: el `mock_all_auths()` común
-  rechaza cualquier autorización que no sea raíz, con un error que no lo dice.
+  `env.authorize_as_current_contract(...)`, y la **raíz del árbol es la
+  llamada anidada** (`token.transfer(pozo, fuente, monto)`), no la llamada
+  directa (`fuente.depositar`). El host nunca consulta ese árbol para el frame
+  directo (el invocador autoriza lo que invoca), así que un árbol con la
+  llamada directa de raíz no se entra nunca y el transfer falla con
+  `Error(Auth, InvalidAction)`. En tests usar `mock_all_auths()` a secas: es
+  el único modo que detecta el árbol mal armado. Con
+  `mock_all_auths_allowing_non_root_auth()` ese error llegó a testnet.
 - **El presupuesto de tests no se renueva entre llamadas** fuera de una
   invocación de contrato. Tres pairings seguidos sobre un `Env` pelado dan
   `Error(Budget, ExceededLimit)`; dentro del contrato cada transacción trae el
