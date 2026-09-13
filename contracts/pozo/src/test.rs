@@ -2,8 +2,9 @@
 
 use super::*;
 use soroban_sdk::{
+    crypto::bls12_381::Bls12381Fr,
     testutils::{Address as _, Ledger as _},
-    token, Env,
+    token, Env, U256,
 };
 
 #[allow(clippy::inconsistent_digit_grouping)]
@@ -16,12 +17,18 @@ const SEMANA: u64 = 604_800;
 /// 10% anual en el mock, para que el rendimiento sea fácil de verificar a mano.
 const TASA_BPS: i128 = 1_000;
 
+/// Parámetros de un drand de mentira que controlan los tests. Mismo período
+/// que quicknet; el génesis coincide con el arranque del reloj del test.
+const ARRANQUE: u64 = 1_700_000_000;
+const DRAND_PERIODO: u64 = 3;
+
 struct Mesa {
     env: Env,
     pozo: Address,
     token: Address,
-    keeper: Address,
     cuentas: Vec<Address>,
+    /// La clave secreta del "drand" de este test.
+    sk: Bls12381Fr,
 }
 
 impl Mesa {
@@ -42,42 +49,51 @@ impl Mesa {
         let l = self.env.ledger().sequence();
         self.env.ledger().with_mut(|x| {
             x.timestamp = t + segundos;
-            // ~5s por ledger, para que las ventanas de commit sean realistas.
             x.sequence_number = l + (segundos / 5) as u32 + 1;
         });
     }
-    /// Avanza solo ledgers, sin mover el reloj. Para la ventana del commit.
-    fn ledgers(&self, n: u32) {
-        let l = self.env.ledger().sequence();
-        self.env.ledger().with_mut(|x| x.sequence_number = l + n);
+    /// Firma una ronda como lo haría drand: `sk · H(sha256(be64(ronda)))`.
+    fn firmar(&self, ronda: u64) -> BytesN<96> {
+        firmar_con(&self.env, &self.sk, ronda)
     }
-    fn secreto(&self, b: u8) -> BytesN<32> {
-        BytesN::from_array(&self.env, &[b; 32])
-    }
-    fn hash(&self, s: &BytesN<32>) -> BytesN<32> {
-        self.env
-            .crypto()
-            .sha256(&Bytes::from_array(&self.env, &s.to_array()))
-            .to_bytes()
-    }
-    /// Cierra la ronda: commitea, espera la ventana y sortea.
-    fn sortear(&self, b: u8) -> Address {
-        let s = self.secreto(b);
-        self.c().comprometer_sorteo(&self.hash(&s));
-        self.ledgers(ESPERA_LEDGERS);
-        self.c().ejecutar_sorteo(&s)
+    /// Cierra la ronda, "espera" a que drand publique, y sortea.
+    fn sortear(&self) -> Address {
+        let ronda_drand = self.c().cerrar_ronda();
+        // drand publica la ronda cuando llega su momento; acá alcanza con
+        // dejar pasar el margen.
+        self.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
+        self.c().ejecutar_sorteo(&self.firmar(ronda_drand))
     }
 }
 
-fn montar(n: u32) -> Mesa {
+fn escalar(env: &Env, n: u32) -> Bls12381Fr {
+    Bls12381Fr::from_u256(U256::from_u32(env, n))
+}
+
+fn pk_de(env: &Env, sk: &Bls12381Fr) -> BytesN<192> {
+    env.crypto()
+        .bls12_381()
+        .g2_mul(&drand::generador_g2(env), sk)
+        .to_bytes()
+}
+
+fn firmar_con(env: &Env, sk: &Bls12381Fr, ronda: u64) -> BytesN<96> {
+    let bls = env.crypto().bls12_381();
+    let h = bls.hash_to_g1(
+        &drand::mensaje(env, ronda),
+        &Bytes::from_slice(env, drand::DST),
+    );
+    bls.g1_mul(&h, sk).to_bytes()
+}
+
+fn montar_con_clave(n: u32, semilla_sk: u32) -> Mesa {
     let env = Env::default();
     // El pozo autoriza su propia llamada a la fuente con
     // `authorize_as_current_contract`, y eso anida un require_auth que
     // `mock_all_auths()` rechaza por no ser raíz.
     env.mock_all_auths_allowing_non_root_auth();
-    // Arrancar lejos de cero: el mock devenga sobre timestamps absolutos.
     env.ledger().with_mut(|l| {
-        l.timestamp = 1_700_000_000;
+        l.timestamp = ARRANQUE;
         l.sequence_number = 1_000;
     });
 
@@ -98,18 +114,31 @@ fn montar(n: u32) -> Mesa {
     mock_rendimiento::MockRendimientoClient::new(&env, &fuente).inicializar(&token, &TASA_BPS);
     acuñador.mint(&fuente, &FONDEO);
 
-    let admin = Address::generate(&env);
-    let keeper = Address::generate(&env);
-    let pozo = env.register(Contract, ());
-    ContractClient::new(&env, &pozo).inicializar(&admin, &keeper, &token, &fuente, &SEMANA);
+    let sk = escalar(&env, semilla_sk);
+    let pk = pk_de(&env, &sk);
+    let pozo = env.register(
+        Contract,
+        (
+            token.clone(),
+            fuente.clone(),
+            SEMANA,
+            pk,
+            ARRANQUE,
+            DRAND_PERIODO,
+        ),
+    );
 
     Mesa {
         env,
         pozo,
         token,
-        keeper,
         cuentas,
+        sk,
     }
+}
+
+fn montar(n: u32) -> Mesa {
+    montar_con_clave(n, 7)
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +155,7 @@ fn el_que_pierde_conserva_todo_su_capital() {
     }
     mesa.avanzar(SEMANA);
 
-    let ganador = mesa.sortear(1);
+    let ganador = mesa.sortear();
 
     for i in 0..3u32 {
         let u = mesa.u(i);
@@ -158,7 +187,7 @@ fn el_ganador_se_lleva_todo_el_rendimiento() {
     let premio_esperado = c.estado().premio;
     assert!(premio_esperado > 0, "una semana al 10% anual genera algo");
 
-    let ganador = mesa.sortear(1);
+    let ganador = mesa.sortear();
     let i = (0..3u32).find(|i| mesa.u(*i) == ganador).unwrap();
 
     assert_eq!(
@@ -196,6 +225,44 @@ fn se_puede_retirar_una_parte() {
 
     assert_eq!(c.saldo(&mesa.u(0)), CIEN - CIEN / 4);
     assert_eq!(mesa.saldo(0), FONDEO - CIEN + CIEN / 4);
+}
+
+#[test]
+fn el_capital_sale_aunque_haya_un_sorteo_pendiente() {
+    // Lo que garantiza que ningún sorteo trabado pueda atrapar plata: retirar
+    // no mira si hay una ronda cerrada esperando.
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+    c.cerrar_ronda();
+
+    c.retirar(&mesa.u(0), &CIEN);
+    assert_eq!(mesa.saldo(0), FONDEO, "el capital sale igual");
+}
+
+#[test]
+fn retirar_entre_el_cierre_y_el_sorteo_no_toca_el_premio() {
+    // El premio y las chances quedaron congelados al cerrar. Que alguien
+    // saque su capital después no cambia quién gana ni cuánto.
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.depositar(&mesa.u(1), &CIEN);
+    mesa.avanzar(SEMANA);
+
+    let ronda_drand = c.cerrar_ronda();
+    let premio = c.estado().premio;
+    assert!(premio > 0);
+
+    c.retirar(&mesa.u(1), &CIEN);
+    mesa.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
+    let ganador = c.ejecutar_sorteo(&mesa.firmar(ronda_drand));
+
+    let i = (0..2u32).find(|i| mesa.u(*i) == ganador).unwrap();
+    let esperado = if i == 1 { FONDEO } else { FONDEO - CIEN } + premio;
+    assert_eq!(mesa.saldo(i), esperado, "cobra el premio congelado entero");
+    assert_eq!(c.estado().principal, CIEN);
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +321,7 @@ fn el_peso_se_reinicia_en_cada_ronda() {
     mesa.avanzar(SEMANA);
     // El segundo entra recién al final de la primera ronda.
     c.depositar(&mesa.u(1), &CIEN);
-    mesa.sortear(1);
+    mesa.sortear();
 
     // Arrancada la ronda nueva, el tiempo acumulado en la anterior no cuenta.
     mesa.avanzar(SEMANA);
@@ -281,93 +348,224 @@ fn retirar_conserva_el_peso_ya_generado() {
 }
 
 // ---------------------------------------------------------------------------
-// El sorteo: commit-reveal
+// La verificación BLS, sola
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
+fn el_generador_g2_esta_en_la_curva_y_en_el_subgrupo() {
+    // Los 192 bytes del generador están tipeados a mano en drand.rs. Una cadena
+    // de 384 bits al azar no cae en la curva, así que esto detecta cualquier
+    // error de transcripción.
+    let env = Env::default();
+    let bls = env.crypto().bls12_381();
+    let gen = drand::generador_g2(&env);
+    assert!(bls.g2_is_on_curve(&gen), "no está en la curva");
+    assert!(bls.g2_is_in_subgroup(&gen), "no está en el subgrupo");
+}
+
+#[test]
+fn bls_acepta_la_firma_legitima_y_rechaza_el_resto() {
+    let env = Env::default();
+    // Fuera de una invocación de contrato el presupuesto no se renueva entre
+    // llamadas, y tres pairings seguidos se pasan del de una transacción. En
+    // el contrato cada sorteo es su propia transacción; ver el test de costo.
+    env.cost_estimate().budget().reset_unlimited();
+    let sk = escalar(&env, 42);
+    let pk = pk_de(&env, &sk);
+
+    let buena = firmar_con(&env, &sk, 1000);
+    assert!(
+        drand::verificar(&env, &pk, 1000, &buena),
+        "la firma legítima verifica"
+    );
+
+    // Misma clave, otra ronda.
+    assert!(!drand::verificar(&env, &pk, 1001, &buena));
+
+    // Otra clave, misma ronda.
+    let otra = firmar_con(&env, &escalar(&env, 43), 1000);
+    assert!(!drand::verificar(&env, &pk, 1000, &otra));
+}
+
+#[test]
+fn el_sorteo_con_el_pozo_lleno_entra_en_una_transaccion() {
+    // La verificación BLS es lo más caro que hace el contrato, y el barrido de
+    // boletos crece con los participantes. Esto mide el peor caso —el pozo al
+    // tope— contra el límite de CPU por transacción de la red, que es lo que
+    // decide si `ejecutar_sorteo` puede fallar on-chain por presupuesto.
+    extern crate std;
+    const LIMITE_CPU_RED: u64 = 100_000_000;
+
+    let mesa = montar(0);
+    let c = mesa.c();
+    let mut budget = mesa.env.cost_estimate().budget();
+
+    // Llenar el pozo excede el presupuesto de una transacción, pero son muchas
+    // transacciones distintas: acá se levanta el límite solo para el armado.
+    budget.reset_unlimited();
+    let acuñador = token::StellarAssetClient::new(&mesa.env, &mesa.token);
+    for _ in 0..MAX_PARTICIPANTES {
+        let a = Address::generate(&mesa.env);
+        acuñador.mint(&a, &CIEN);
+        c.depositar(&a, &CIEN);
+    }
+    assert_eq!(c.estado().participantes, MAX_PARTICIPANTES);
+    mesa.avanzar(SEMANA);
+    let ronda_drand = c.cerrar_ronda();
+    mesa.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
+    let firma = mesa.firmar(ronda_drand);
+
+    // El sorteo, bajo el presupuesto real de una transacción.
+    budget.reset_default();
+    c.ejecutar_sorteo(&firma);
+    let cpu = budget.cpu_instruction_cost();
+    let mem = budget.memory_bytes_cost();
+    std::println!(
+        "ejecutar_sorteo con {MAX_PARTICIPANTES} participantes: {cpu} instrucciones, {mem} bytes"
+    );
+    assert!(
+        cpu < LIMITE_CPU_RED,
+        "el sorteo no entra en una transacción: {cpu} >= {LIMITE_CPU_RED}"
+    );
+}
+
+#[test]
+fn ronda_en_sigue_el_reloj_de_drand() {
+    // Ronda 1 en el génesis, una nueva cada período; antes del génesis nada.
+    assert_eq!(drand::ronda_en(100, 3, 99), 0);
+    assert_eq!(drand::ronda_en(100, 3, 100), 1);
+    assert_eq!(drand::ronda_en(100, 3, 102), 1);
+    assert_eq!(drand::ronda_en(100, 3, 103), 2);
+    assert_eq!(drand::ronda_en(100, 3, 100 + 3 * 200), 201);
+}
+
+// ---------------------------------------------------------------------------
+// El sorteo
+// ---------------------------------------------------------------------------
+
+#[test]
+fn la_ronda_de_drand_queda_en_el_futuro() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+
+    let ahora = mesa.env.ledger().timestamp();
+    let fijada = c.cerrar_ronda();
+    let vigente = drand::ronda_en(ARRANQUE, DRAND_PERIODO, ahora);
+
+    assert!(
+        fijada >= vigente + MARGEN_SEGUNDOS / DRAND_PERIODO,
+        "la firma de esa ronda no puede existir todavía: {fijada} vs vigente {vigente}"
+    );
+    assert_eq!(c.estado().ronda_drand, Some(fijada));
+    assert!(c.estado().sorteo_pendiente);
+}
+
+#[test]
+fn cerrar_y_sortear_no_piden_permiso_a_nadie() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+
+    let ronda_drand = c.cerrar_ronda();
+    assert!(
+        mesa.env.auths().is_empty(),
+        "cerrar no exige la firma de ninguna cuenta"
+    );
+
+    mesa.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
+    c.ejecutar_sorteo(&mesa.firmar(ronda_drand));
+    assert!(
+        mesa.env.auths().is_empty(),
+        "sortear tampoco: no hay keeper que pueda desaparecer"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
 fn no_se_cierra_una_ronda_en_curso() {
     let mesa = montar(2);
     mesa.c().depositar(&mesa.u(0), &CIEN);
     mesa.avanzar(SEMANA / 2);
-    mesa.c().comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #12)")]
-fn un_secreto_que_no_corresponde_no_sortea() {
-    let mesa = montar(2);
-    let c = mesa.c();
-    c.depositar(&mesa.u(0), &CIEN);
-    mesa.avanzar(SEMANA);
-
-    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
-    mesa.ledgers(ESPERA_LEDGERS);
-    // Revela otro: el keeper no puede cambiar de idea después de commitear.
-    c.ejecutar_sorteo(&mesa.secreto(2));
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #10)")]
-fn no_se_sortea_en_el_mismo_ledger_del_commit() {
-    let mesa = montar(2);
-    let c = mesa.c();
-    c.depositar(&mesa.u(0), &CIEN);
-    mesa.avanzar(SEMANA);
-
-    let s = mesa.secreto(1);
-    c.comprometer_sorteo(&mesa.hash(&s));
-    // Sin esperar: la semilla saldría de un transaction-set que el keeper ya
-    // podía estar viendo al commitear.
-    mesa.ledgers(ESPERA_LEDGERS - 1);
-    c.ejecutar_sorteo(&s);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #11)")]
-fn un_commit_viejo_vence() {
-    let mesa = montar(2);
-    let c = mesa.c();
-    c.depositar(&mesa.u(0), &CIEN);
-    mesa.avanzar(SEMANA);
-
-    let s = mesa.secreto(1);
-    c.comprometer_sorteo(&mesa.hash(&s));
-    // Guardarse un commit para usarlo en una ronda que convenga no se puede.
-    mesa.ledgers(EXPIRA_LEDGERS + 1);
-    c.ejecutar_sorteo(&s);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #8)")]
-fn no_se_sortea_sin_commit() {
-    let mesa = montar(2);
-    mesa.c().depositar(&mesa.u(0), &CIEN);
-    mesa.avanzar(SEMANA);
-    mesa.c().ejecutar_sorteo(&mesa.secreto(1));
+    mesa.c().cerrar_ronda();
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #9)")]
-fn no_se_commitea_dos_veces() {
+fn la_firma_de_otra_ronda_no_sortea() {
     let mesa = montar(2);
     let c = mesa.c();
     c.depositar(&mesa.u(0), &CIEN);
     mesa.avanzar(SEMANA);
-    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
-    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(2)));
+
+    let ronda_drand = c.cerrar_ronda();
+    mesa.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
+    // Una firma legítima de drand, pero de la ronda siguiente: no es la que se
+    // fijó al cerrar, así que no decide nada.
+    c.ejecutar_sorteo(&mesa.firmar(ronda_drand + 1));
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #13)")]
-fn no_se_sortea_un_pozo_vacio() {
+#[should_panic(expected = "Error(Contract, #9)")]
+fn la_firma_de_otra_clave_no_sortea() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+
+    let ronda_drand = c.cerrar_ronda();
+    mesa.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
+    // Alguien que no es drand firma la ronda correcta con su propia clave.
+    let impostor = escalar(&mesa.env, 99);
+    c.ejecutar_sorteo(&firmar_con(&mesa.env, &impostor, ronda_drand));
+}
+
+#[test]
+#[should_panic]
+fn una_firma_basura_no_sortea() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+    c.cerrar_ronda();
+    mesa.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
+    // Ni siquiera es un punto de la curva. El host lo rechaza antes de que
+    // el contrato llegue a emparejar.
+    c.ejecutar_sorteo(&BytesN::from_array(&mesa.env, &[7u8; 96]));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn no_se_sortea_sin_cierre() {
+    let mesa = montar(2);
+    mesa.c().depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+    mesa.c().ejecutar_sorteo(&mesa.firmar(1));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")]
+fn no_se_cierra_dos_veces() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+    c.cerrar_ronda();
+    c.cerrar_ronda();
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn no_se_cierra_un_pozo_vacio() {
     let mesa = montar(2);
     mesa.avanzar(SEMANA);
-    mesa.c().comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
+    mesa.c().cerrar_ronda();
 }
 
 #[test]
-fn depositar_despues_del_commit_no_cambia_esa_ronda() {
+fn depositar_despues_del_cierre_no_cambia_esa_ronda() {
     let mesa = montar(3);
     let c = mesa.c();
 
@@ -375,25 +573,22 @@ fn depositar_despues_del_commit_no_cambia_esa_ronda() {
     c.depositar(&mesa.u(1), &CIEN);
     mesa.avanzar(SEMANA);
 
-    let s = mesa.secreto(1);
-    c.comprometer_sorteo(&mesa.hash(&s));
-    let congelado = c.estado();
+    let ronda_drand = c.cerrar_ronda();
 
-    // Entra alguien nuevo con el commit ya puesto.
+    // Entra alguien nuevo con la ronda ya cerrada, con cien veces más plata.
     c.depositar(&mesa.u(2), &(CIEN * 100));
-    mesa.ledgers(ESPERA_LEDGERS);
-    let ganador = c.ejecutar_sorteo(&s);
+    mesa.avanzar(MARGEN_SEGUNDOS + DRAND_PERIODO);
+    let ganador = c.ejecutar_sorteo(&mesa.firmar(ronda_drand));
 
     assert!(
         ganador != mesa.u(2),
         "el que entró después del cierre no puede ganar esa ronda"
     );
-    assert!(congelado.hay_commit);
 }
 
 #[test]
 fn el_sorteo_es_reproducible_desde_lo_que_queda_on_chain() {
-    // Mismo secreto, mismos depósitos y mismos tiempos -> mismo ganador. Es lo
+    // Misma firma, mismos depósitos y mismos tiempos -> mismo ganador. Es lo
     // que permite que cualquiera recompute el sorteo y lo verifique.
     let corrida = || {
         let mesa = montar(4);
@@ -402,38 +597,31 @@ fn el_sorteo_es_reproducible_desde_lo_que_queda_on_chain() {
             c.depositar(&mesa.u(i), &(CIEN * (i as i128 + 1)));
         }
         mesa.avanzar(SEMANA);
-        let ganador = mesa.sortear(7);
+        let ganador = mesa.sortear();
         (0..4u32).find(|i| mesa.u(*i) == ganador).unwrap()
     };
     assert_eq!(corrida(), corrida());
 }
 
 #[test]
-fn secretos_distintos_dan_ganadores_distintos() {
-    // Con la misma configuración, cambiar solo el secreto tiene que poder
-    // cambiar el ganador: si no, el secreto no está entrando en la semilla.
-    let con = |b: u8| {
-        let mesa = montar(8);
+fn firmas_distintas_dan_ganadores_distintos() {
+    // Con todo lo demás igual, cambiar solo la firma de drand tiene que poder
+    // cambiar el ganador: si no, la firma no está entrando en la semilla. Se
+    // simula con beacons de clave distinta.
+    let con = |clave: u32| {
+        let mesa = montar_con_clave(8, clave);
         let c = mesa.c();
         for i in 0..8u32 {
             c.depositar(&mesa.u(i), &CIEN);
         }
         mesa.avanzar(SEMANA);
-        let g = mesa.sortear(b);
+        let g = mesa.sortear();
         (0..8u32).find(|i| mesa.u(*i) == g).unwrap()
     };
-    let ganadores: Vec<u32> = {
-        let env = Env::default();
-        let mut v = Vec::new(&env);
-        for b in 1..=12u8 {
-            v.push_back(con(b));
-        }
-        v
-    };
-    let primero = ganadores.get_unchecked(0);
+    let primero = con(1);
     assert!(
-        (0..ganadores.len()).any(|i| ganadores.get_unchecked(i) != primero),
-        "cambiar el secreto nunca cambió el ganador: no está en la semilla"
+        (2..=12u32).any(|k| con(k) != primero),
+        "cambiar la firma nunca cambió el ganador: no está en la semilla"
     );
 }
 
@@ -450,13 +638,12 @@ fn el_pozo_sigue_generando_ronda_tras_ronda() {
         c.depositar(&mesa.u(i), &CIEN);
     }
 
-    for ronda in 0..3u8 {
+    for ronda in 0..3u32 {
         mesa.avanzar(SEMANA);
-        assert_eq!(c.estado().ronda, ronda as u32);
+        assert_eq!(c.estado().ronda, ronda);
         let premio = c.estado().premio;
         assert!(premio > 0, "la ronda {ronda} tiene que haber generado algo");
-        mesa.sortear(ronda + 1);
-        assert_eq!(c.estado().premio, 0, "el premio se pagó entero");
+        mesa.sortear();
     }
 
     assert_eq!(c.estado().ronda, 3);
@@ -479,7 +666,7 @@ fn adelantar_el_mock_genera_premio_sin_esperar() {
 
     // Y ese premio se puede sortear y cobrar de verdad, no es solo cosmético.
     mesa.avanzar(SEMANA);
-    let ganador = mesa.sortear(1);
+    let ganador = mesa.sortear();
     assert_eq!(ganador, mesa.u(0));
     assert!(mesa.saldo(0) > FONDEO - CIEN);
     assert_eq!(c.saldo(&mesa.u(0)), CIEN, "el capital sigue intacto");
@@ -495,6 +682,8 @@ fn la_vista_trae_lo_que_muestra_la_pantalla() {
     assert_eq!(v.principal, 0);
     assert_eq!(v.premio, 0);
     assert_eq!(v.apy_bps, None, "sin capital no hay APY que mostrar");
+    assert!(!v.sorteo_pendiente);
+    assert_eq!(v.ronda_drand, None);
 
     for i in 0..3u32 {
         c.depositar(&mesa.u(i), &CIEN);
@@ -506,7 +695,6 @@ fn la_vista_trae_lo_que_muestra_la_pantalla() {
     assert_eq!(v.principal, CIEN * 3);
     assert!(v.premio > 0);
     assert_eq!(v.periodo, SEMANA);
-    assert!(!v.hay_commit);
 
     // El APY que reporta tiene que parecerse al que configuramos en el mock.
     let apy = v.apy_bps.unwrap();
@@ -517,23 +705,7 @@ fn la_vista_trae_lo_que_muestra_la_pantalla() {
 }
 
 #[test]
-fn el_keeper_es_el_unico_que_cierra() {
-    let mesa = montar(2);
-    // Con mock_all_auths no se puede probar el rechazo, pero sí que la
-    // autorización pedida es la del keeper y no la de cualquiera.
-    mesa.c().depositar(&mesa.u(0), &CIEN);
-    mesa.avanzar(SEMANA);
-    mesa.c().comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
-
-    let auths = mesa.env.auths();
-    assert_eq!(
-        auths.first().map(|(a, _)| a.clone()),
-        Some(mesa.keeper.clone())
-    );
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #4)")]
+#[should_panic(expected = "Error(Contract, #3)")]
 fn no_se_retira_mas_de_lo_depositado() {
     let mesa = montar(2);
     mesa.c().depositar(&mesa.u(0), &CIEN);
@@ -541,7 +713,7 @@ fn no_se_retira_mas_de_lo_depositado() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #6)")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn un_extraño_no_retira() {
     let mesa = montar(2);
     mesa.c().depositar(&mesa.u(0), &CIEN);
@@ -549,69 +721,8 @@ fn un_extraño_no_retira() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn no_se_deposita_cero() {
     let mesa = montar(2);
     mesa.c().depositar(&mesa.u(0), &0);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #1)")]
-fn no_se_inicializa_dos_veces() {
-    let mesa = montar(2);
-    let cfg = mesa.c().config();
-    mesa.c()
-        .inicializar(&cfg.admin, &cfg.keeper, &cfg.token, &cfg.fuente, &SEMANA);
-}
-
-#[test]
-fn un_commit_vencido_no_deja_el_pozo_trabado() {
-    let mesa = montar(2);
-    let c = mesa.c();
-    c.depositar(&mesa.u(0), &CIEN);
-    mesa.avanzar(SEMANA);
-
-    // El keeper commitea y después desaparece hasta que vence la ventana.
-    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
-    mesa.ledgers(EXPIRA_LEDGERS + 1);
-
-    // Tiene que poder rearrancar el sorteo. Si esto explota, el pozo queda
-    // trabado para siempre: no se puede ejecutar (vencido) ni recommitear.
-    let ganador = mesa.sortear(2);
-    assert_eq!(ganador, mesa.u(0));
-}
-
-#[test]
-fn el_capital_sale_aunque_haya_un_commit_colgado() {
-    // Lo que garantiza que un keeper ausente no pueda atrapar plata de nadie:
-    // retirar no pasa por el keeper ni por el admin.
-    let mesa = montar(2);
-    let c = mesa.c();
-    c.depositar(&mesa.u(0), &CIEN);
-    mesa.avanzar(SEMANA);
-    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
-
-    c.retirar(&mesa.u(0), &CIEN);
-    assert_eq!(mesa.saldo(0), FONDEO, "el capital sale igual");
-}
-
-#[test]
-fn el_admin_puede_rotar_un_keeper_ausente() {
-    let mesa = montar(2);
-    let c = mesa.c();
-    c.depositar(&mesa.u(0), &CIEN);
-    mesa.avanzar(SEMANA);
-
-    // El keeper commitea y se pierde con el secreto.
-    c.comprometer_sorteo(&mesa.hash(&mesa.secreto(1)));
-    mesa.ledgers(EXPIRA_LEDGERS + 1);
-
-    let nuevo = Address::generate(&mesa.env);
-    c.cambiar_keeper(&nuevo);
-    assert_eq!(c.config().keeper, nuevo);
-
-    // Y el keeper nuevo puede cerrar la ronda con su propio secreto.
-    let ganador = mesa.sortear(9);
-    assert_eq!(ganador, mesa.u(0));
-    assert!(mesa.saldo(0) > FONDEO - CIEN, "el premio se pagó");
 }

@@ -26,6 +26,29 @@ than 1.81, 1.82, 1.83 or 1.91.0 to build contracts`.
 **La ventana real arranca en 1.91.1.** `rust-toolchain.toml` ya la fija; no la
 bajes a 1.91.0 por más que el mensaje del SDK diga que alcanza.
 
+## BLS12-381 y drand (contrato `pozo`)
+
+- **El host no descomprime puntos.** `Bls12381G1Affine::from_bytes` toma 96
+  bytes y `G2` 192, sin comprimir. drand sirve 48 y 96 comprimidos: la
+  descompresión vive en TypeScript (`@noble/curves`), nunca en el contrato.
+- **Layout de G2 sin comprimir**: `be(X_c1) || be(X_c0) || be(Y_c1) || be(Y_c0)`.
+  Es el de arkworks/zkcrypto, y noble produce el mismo. Está verificado por un
+  test que cruza el generador tipeado en `drand.rs` contra el de noble.
+- **La SDK no trae el generador de G2.** Está hardcodeado en `drand.rs`; el
+  test de Rust chequea curva + subgrupo, el de TS chequea los bytes exactos.
+- **Un contrato que firma en su propio nombre para una llamada anidada** (el
+  pozo llamando a la fuente, que a su vez mueve el token) necesita
+  `env.authorize_as_current_contract(...)` con el árbol completo. En tests eso
+  exige `mock_all_auths_allowing_non_root_auth()`: el `mock_all_auths()` común
+  rechaza cualquier autorización que no sea raíz, con un error que no lo dice.
+- **El presupuesto de tests no se renueva entre llamadas** fuera de una
+  invocación de contrato. Tres pairings seguidos sobre un `Env` pelado dan
+  `Error(Budget, ExceededLimit)`; dentro del contrato cada transacción trae el
+  suyo. `env.cost_estimate().budget()` devuelve un valor que hay que ligar con
+  `let mut` para poder `reset_unlimited()` / `reset_default()`.
+- **Costo medido**: `ejecutar_sorteo` con 200 participantes (1 pairing + el
+  barrido) = ~38M instrucciones sobre un límite de 100M por transacción.
+
 ## Reglas de SDK que el modelo suele equivocar
 
 El SDK v14 renombró el namespace. Escribí siempre:

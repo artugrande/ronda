@@ -12,21 +12,38 @@
 //!
 //! ## De dónde sale el azar
 //!
-//! Soroban no expone el hash de ningún ledger pasado, así que el esquema clásico
-//! de EVM (commitear un bloque y usar `blockhash` de uno posterior) no se puede
-//! portar. En su lugar, tres fuentes que ninguna parte controla sola:
+//! De **drand**, un beacon público de aleatoriedad producido por ~20
+//! organizaciones independientes (League of Entropy) con una firma BLS umbral.
+//! Cada 3 segundos publica la firma de una ronda numerada; nadie conoce la
+//! firma de una ronda futura hasta que sale, y cualquiera la verifica con la
+//! clave pública del grupo. Ver `drand.rs`.
 //!
-//! 1. **Un secreto commiteado.** El keeper publica `sha256(secreto)` al cerrar
-//!    la ronda y lo revela al sortear. No puede cambiarlo después de verlo todo.
-//! 2. **La entropía de los depósitos.** Se mezcla en cada depósito, así que
-//!    depende de quién entró, cuánto y cuándo.
-//! 3. **El PRNG de la red.** Su semilla sale del hash del transaction-set, que
-//!    no se conoce al simular: **el keeper no puede previsualizar quién gana**
-//!    antes de mandar la transacción.
+//! El protocolo tiene dos pasos y **ninguno necesita permiso**:
 //!
-//! Queda el riesgo de que un validador corrupto sesgue el punto 3. Es el mismo
-//! que documenta la propia SDK de Soroban y no se puede eliminar sin un VRF
-//! externo. Está dicho, no escondido.
+//! 1. `cerrar_ronda`: cuando vence el período, cualquiera cierra. Se congelan
+//!    las chances y el premio, y se fija una ronda de drand que cae **en el
+//!    futuro** (≥ 10 minutos). Nadie —ni quien cierra, ni un validador— puede
+//!    conocer todavía la firma de esa ronda.
+//! 2. `ejecutar_sorteo`: cuando drand la publica, cualquiera la trae. El
+//!    contrato la verifica on-chain con las host functions BLS12-381 que Stellar
+//!    agregó en el Protocolo 22, deriva el ganador de esa firma, y paga.
+//!
+//! ## Qué queda protegido y contra quién
+//!
+//! - **Validadores de Stellar**: no controlan drand. No participan de la
+//!   semilla en ningún punto. Es el problema que el diseño anterior, basado en
+//!   el PRNG de red, no podía resolver.
+//! - **Quien cierra la ronda**: elige el momento, pero la ronda de drand queda
+//!   a ≥ 10 minutos, y un validador solo puede correr el reloj del ledger unos
+//!   segundos. No hay ronda pasada que pueda elegir.
+//! - **Quien ejecuta**: no elige nada. La firma es la que es, o no verifica.
+//! - **Un operador que desaparece**: no existe el rol. Cualquiera puede cerrar
+//!   y ejecutar, así que el premio nunca queda rehén de una persona.
+//! - **drand mismo**: haría falta que una mayoría de las ~20 organizaciones se
+//!   coludan para sesgar una ronda. Es el supuesto de confianza que queda, y es
+//!   público y verificable, no un servidor de nadie.
+//!
+//! El capital nunca depende de nada de esto: `retirar` funciona siempre.
 
 use soroban_sdk::{
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
@@ -36,19 +53,18 @@ use soroban_sdk::{
     Address, Bytes, BytesN, Env, IntoVal, Symbol, Vec,
 };
 
+mod drand;
+
 // ---------------------------------------------------------------------------
 // Constantes
 // ---------------------------------------------------------------------------
 
-/// Ledgers que tienen que pasar entre commit y sorteo.
+/// Cuánto en el futuro cae la ronda de drand que se fija al cerrar.
 ///
-/// Fuerza que la semilla del PRNG venga de un transaction-set que todavía no
-/// existía cuando el keeper se comprometió al secreto.
-pub const ESPERA_LEDGERS: u32 = 10;
-
-/// Después de esto el commit vence y hay que rehacerlo. Evita que un keeper se
-/// guarde un commit viejo esperando una ronda que le convenga.
-pub const EXPIRA_LEDGERS: u32 = 2_000;
+/// Es la distancia que garantiza que nadie conozca la firma todavía. Un
+/// validador puede correr el timestamp del ledger unos segundos; diez minutos
+/// están fuera de su alcance por órdenes de magnitud.
+pub const MARGEN_SEGUNDOS: u64 = 600;
 
 /// Tope de participantes. Todos viven en una sola entrada de storage que se lee
 /// entera en el sorteo; más que esto habría que partirla o volver a un Fenwick.
@@ -65,25 +81,23 @@ const BUMP_EXTENSION: u32 = 518_400; // ~30 días
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    YaInicializado = 1,
-    SinInicializar = 2,
-    MontoInvalido = 3,
-    SaldoInsuficiente = 4,
-    PozoLleno = 5,
-    NoParticipa = 6,
+    SinInicializar = 1,
+    MontoInvalido = 2,
+    SaldoInsuficiente = 3,
+    PozoLleno = 4,
+    NoParticipa = 5,
     /// La ronda todavía no venció.
-    RondaEnCurso = 7,
-    /// No hay commit pendiente, o ya se usó.
-    SinCommit = 8,
-    YaHayCommit = 9,
-    /// Falta esperar los ledgers entre commit y sorteo.
-    CommitReciente = 10,
-    CommitVencido = 11,
-    /// El secreto revelado no corresponde al hash commiteado.
-    SecretoInvalido = 12,
+    RondaEnCurso = 6,
+    /// No hay ninguna ronda cerrada esperando sorteo.
+    SinCierre = 7,
+    /// Ya hay una ronda cerrada esperando su firma de drand.
+    RondaYaCerrada = 8,
+    /// La firma no es la de drand para la ronda fijada al cerrar.
+    FirmaInvalida = 9,
     /// No hay peso: nadie participó de la ronda.
-    SinParticipantes = 13,
-    PeriodoInvalido = 14,
+    SinParticipantes = 10,
+    PeriodoInvalido = 11,
+    DrandInvalido = 12,
 }
 
 // ---------------------------------------------------------------------------
@@ -102,27 +116,43 @@ pub struct Participante {
     pub desde: u64,
 }
 
+/// Un participante con su peso congelado al cerrar la ronda.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Boleto {
+    pub addr: Address,
+    pub peso: i128,
+}
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub admin: Address,
-    /// Quien cierra la ronda y ejecuta el sorteo.
-    pub keeper: Address,
     pub token: Address,
     /// Contrato que genera el rendimiento (Blend en producción, mock en tests).
     pub fuente: Address,
     /// Duración de una ronda, en segundos.
     pub periodo: u64,
+    /// Clave pública del grupo de drand, G2 sin comprimir.
+    pub drand_pk: BytesN<192>,
+    /// Unix time de la ronda 1 de drand.
+    pub drand_genesis: u64,
+    /// Segundos entre rondas de drand.
+    pub drand_periodo: u64,
 }
 
+/// Una ronda cerrada esperando su firma. Todo lo que define el sorteo queda
+/// congelado acá: depositar o retirar después ya no lo cambia.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct Sorteo {
-    pub hash_secreto: BytesN<32>,
-    pub ledger: u32,
-    /// Peso total congelado al commitear, para que un depósito posterior no
-    /// cambie las chances de una ronda que ya cerró.
+    /// La ronda de drand cuya firma decide. Estaba en el futuro al cerrar.
+    pub ronda_drand: u64,
+    pub boletos: Vec<Boleto>,
     pub peso_total: i128,
+    /// Entropía acumulada de los depósitos hasta el cierre.
+    pub entropia: BytesN<32>,
+    /// Rendimiento generado hasta el cierre. Es lo que se paga.
+    pub premio: i128,
 }
 
 /// Lo que necesita la pantalla, en una sola llamada.
@@ -132,7 +162,8 @@ pub struct Vista {
     pub participantes: u32,
     /// Capital total depositado. Es lo que nadie puede perder.
     pub principal: i128,
-    /// Rendimiento generado hasta ahora: es el premio si se sorteara ya.
+    /// Rendimiento en juego: el generado hasta ahora, o el congelado si la
+    /// ronda ya cerró y espera su sorteo.
     pub premio: i128,
     pub ronda: u32,
     pub cierra_at: u64,
@@ -140,7 +171,10 @@ pub struct Vista {
     /// Rendimiento anual en puntos básicos, derivado de lo que reporta la
     /// fuente. `None` mientras no haya con qué calcularlo.
     pub apy_bps: Option<i128>,
-    pub hay_commit: bool,
+    /// `true` entre el cierre y el sorteo.
+    pub sorteo_pendiente: bool,
+    /// Qué ronda de drand hay que traer para sortear, si hay una pendiente.
+    pub ronda_drand: Option<u64>,
 }
 
 #[contracttype]
@@ -181,11 +215,13 @@ pub struct Retiro {
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SorteoComprometido {
+pub struct RondaCerrada {
     #[topic]
     pub ronda: u32,
-    pub ledger: u32,
+    /// La ronda de drand que hay que traer. El keeper la lee de acá.
+    pub ronda_drand: u64,
     pub peso_total: i128,
+    pub premio: i128,
 }
 
 #[contractevent]
@@ -197,7 +233,8 @@ pub struct SorteoEjecutado {
     pub ganador: Address,
     pub premio: i128,
     /// Para que cualquiera pueda recomputar el sorteo y verificarlo.
-    pub secreto: BytesN<32>,
+    pub ronda_drand: u64,
+    pub firma: BytesN<96>,
     pub peso_total: i128,
 }
 
@@ -210,32 +247,37 @@ pub struct Contract;
 
 #[contractimpl]
 impl Contract {
-    pub fn inicializar(
+    /// Constructor: corre en la misma transacción que el deploy, así que nadie
+    /// puede adelantarse a inicializar con otra configuración.
+    ///
+    /// No hay admin ni keeper. Después de esto el contrato no tiene llaves.
+    pub fn __constructor(
         env: Env,
-        admin: Address,
-        keeper: Address,
         token: Address,
         fuente: Address,
         periodo: u64,
+        drand_pk: BytesN<192>,
+        drand_genesis: u64,
+        drand_periodo: u64,
     ) {
-        if env.storage().instance().has(&Clave::Config) {
-            panic_with_error!(&env, Error::YaInicializado);
-        }
         if periodo == 0 {
             panic_with_error!(&env, Error::PeriodoInvalido);
         }
-        admin.require_auth();
+        if drand_periodo == 0 {
+            panic_with_error!(&env, Error::DrandInvalido);
+        }
 
         let ahora = env.ledger().timestamp();
         let inst = env.storage().instance();
         inst.set(
             &Clave::Config,
             &Config {
-                admin,
-                keeper,
                 token,
                 fuente,
                 periodo,
+                drand_pk,
+                drand_genesis,
+                drand_periodo,
             },
         );
         inst.set(&Clave::Participantes, &Vec::<Participante>::new(&env));
@@ -302,6 +344,8 @@ impl Contract {
 
     /// Retira capital. Sin penalidad y en cualquier momento: el producto se
     /// apoya en que nadie pierde nada, y una salida trabada rompería eso.
+    ///
+    /// No depende de que haya o no un sorteo pendiente.
     pub fn retirar(env: Env, usuario: Address, monto: i128) {
         usuario.require_auth();
         if monto <= 0 {
@@ -345,93 +389,97 @@ impl Contract {
         .publish(&env);
     }
 
-    /// Cierra la ronda y congela las chances.
+    /// Cierra la ronda vencida y congela el sorteo. Cualquiera puede llamarla.
     ///
-    /// El keeper publica `sha256(secreto)` sin revelarlo. A partir de acá el
-    /// peso de cada uno queda fijo: depositar después ya no cambia esta ronda.
-    pub fn comprometer_sorteo(env: Env, hash_secreto: BytesN<32>) {
+    /// Fija la ronda de drand que va a decidir, ≥ `MARGEN_SEGUNDOS` en el
+    /// futuro: al cerrar, esa firma todavía no existe para nadie. Congela los
+    /// pesos, el premio y la entropía. Depositar o retirar después no toca
+    /// nada de esto.
+    pub fn cerrar_ronda(env: Env) -> u64 {
         let cfg = config(&env);
-        cfg.keeper.require_auth();
-
-        // Un commit vencido se puede reemplazar. Sin esto el pozo queda
-        // trabado: no se puede ejecutar porque venció, ni commitear de nuevo
-        // porque ya hay uno, y el premio no lo cobra nadie nunca.
-        //
-        // Reemplazar no le da al keeper una forma de grindear: como no puede
-        // previsualizar el resultado, dejar vencer un commit a propósito no le
-        // dice nada sobre quién iba a ganar.
-        if let Some(s) = env.storage().instance().get::<_, Sorteo>(&Clave::Sorteo) {
-            if env.ledger().sequence() <= s.ledger + EXPIRA_LEDGERS {
-                panic_with_error!(&env, Error::YaHayCommit);
-            }
+        if env.storage().instance().has(&Clave::Sorteo) {
+            panic_with_error!(&env, Error::RondaYaCerrada);
         }
         let ahora = env.ledger().timestamp();
         if ahora < cierra_at(&env) {
             panic_with_error!(&env, Error::RondaEnCurso);
         }
 
-        let peso_total = peso_total(&participantes(&env), ahora);
+        let ps = participantes(&env);
+        let mut boletos = Vec::new(&env);
+        let mut peso_total = 0i128;
+        for i in 0..ps.len() {
+            let p = ps.get_unchecked(i);
+            let w = peso(&p, ahora);
+            if w > 0 {
+                boletos.push_back(Boleto {
+                    addr: p.addr,
+                    peso: w,
+                });
+                peso_total += w;
+            }
+        }
         if peso_total <= 0 {
             panic_with_error!(&env, Error::SinParticipantes);
         }
 
-        let ledger = env.ledger().sequence();
+        let ronda_drand = drand::ronda_en(
+            cfg.drand_genesis,
+            cfg.drand_periodo,
+            ahora + MARGEN_SEGUNDOS,
+        );
+        let premio = premio_disponible(&env, &cfg);
+
         env.storage().instance().set(
             &Clave::Sorteo,
             &Sorteo {
-                hash_secreto,
-                ledger,
+                ronda_drand,
+                boletos,
                 peso_total,
+                entropia: entropia(&env),
+                premio,
             },
         );
+        env.storage()
+            .instance()
+            .extend_ttl(BUMP_UMBRAL, BUMP_EXTENSION);
 
-        SorteoComprometido {
+        RondaCerrada {
             ronda: ronda(&env),
-            ledger,
+            ronda_drand,
             peso_total,
+            premio,
         }
         .publish(&env);
+
+        ronda_drand
     }
 
-    /// Revela el secreto, elige ganador y le paga todo el rendimiento.
+    /// Trae la firma de drand de la ronda fijada al cerrar, verifica, elige
+    /// ganador y le paga el rendimiento. Cualquiera puede llamarla.
     ///
     /// El capital de todos queda intacto y arranca una ronda nueva.
-    pub fn ejecutar_sorteo(env: Env, secreto: BytesN<32>) -> Address {
+    pub fn ejecutar_sorteo(env: Env, firma: BytesN<96>) -> Address {
         let cfg = config(&env);
-        cfg.keeper.require_auth();
-
         let s: Sorteo = match env.storage().instance().get(&Clave::Sorteo) {
             Some(s) => s,
-            None => panic_with_error!(&env, Error::SinCommit),
+            None => panic_with_error!(&env, Error::SinCierre),
         };
 
-        let ledger = env.ledger().sequence();
-        if ledger < s.ledger + ESPERA_LEDGERS {
-            panic_with_error!(&env, Error::CommitReciente);
-        }
-        if ledger > s.ledger + EXPIRA_LEDGERS {
-            panic_with_error!(&env, Error::CommitVencido);
+        if !drand::verificar(&env, &cfg.drand_pk, s.ronda_drand, &firma) {
+            panic_with_error!(&env, Error::FirmaInvalida);
         }
 
-        // El secreto tiene que ser el mismo que se commiteó a ciegas.
-        let hash = env
-            .crypto()
-            .sha256(&Bytes::from_array(&env, &secreto.to_array()));
-        if hash.to_bytes() != s.hash_secreto {
-            panic_with_error!(&env, Error::SecretoInvalido);
-        }
+        let ganador = elegir(&env, &s, &firma);
 
-        let ganador = elegir(&env, &secreto, s.peso_total);
-
-        // El premio es exactamente lo que la fuente devolvió por encima del
-        // capital. Si esto diera negativo por una pérdida de la fuente, el
-        // premio es cero y no se toca un centavo del capital de nadie.
-        let principal = principal(&env);
-        let en_fuente = balance_fuente(&env, &cfg);
-        let premio = if en_fuente > principal {
-            en_fuente - principal
+        // Se paga lo congelado al cerrar, pero nunca más que lo que la fuente
+        // tiene por encima del capital *ahora*. Si la fuente perdió plata entre
+        // el cierre y el sorteo, el premio se achica; el capital no se toca.
+        let disponible = premio_disponible(&env, &cfg);
+        let premio = if s.premio < disponible {
+            s.premio
         } else {
-            0
+            disponible
         };
 
         if premio > 0 {
@@ -448,7 +496,8 @@ impl Contract {
             ronda: ronda_cerrada,
             ganador: ganador.clone(),
             premio,
-            secreto,
+            ronda_drand: s.ronda_drand,
+            firma,
             peso_total: s.peso_total,
         }
         .publish(&env);
@@ -474,24 +523,6 @@ impl Contract {
         ganador
     }
 
-    /// Rota el keeper. Solo el admin.
-    ///
-    /// Existe por un problema de liveness, no de confianza: el secreto de un
-    /// commit lo conoce únicamente el keeper, así que si desaparece nadie puede
-    /// ejecutar ese sorteo y el premio queda sin cobrar para siempre.
-    ///
-    /// El capital nunca está en juego acá: `retirar` no depende del keeper ni
-    /// del admin, y funciona aunque haya un commit colgado.
-    pub fn cambiar_keeper(env: Env, nuevo: Address) {
-        let mut cfg = config(&env);
-        cfg.admin.require_auth();
-        cfg.keeper = nuevo;
-        env.storage().instance().set(&Clave::Config, &cfg);
-        env.storage()
-            .instance()
-            .extend_ttl(BUMP_UMBRAL, BUMP_EXTENSION);
-    }
-
     // -- Lecturas -----------------------------------------------------------
 
     /// Todo lo que muestra la pantalla, en una llamada.
@@ -499,11 +530,11 @@ impl Contract {
         let cfg = config(&env);
         let ps = participantes(&env);
         let principal = principal(&env);
-        let en_fuente = balance_fuente(&env, &cfg);
-        let premio = if en_fuente > principal {
-            en_fuente - principal
-        } else {
-            0
+        let pendiente: Option<Sorteo> = env.storage().instance().get(&Clave::Sorteo);
+
+        let premio = match &pendiente {
+            Some(s) => s.premio,
+            None => premio_disponible(&env, &cfg),
         };
 
         Vista {
@@ -514,7 +545,8 @@ impl Contract {
             cierra_at: cierra_at(&env),
             periodo: cfg.periodo,
             apy_bps: apy_bps(&env, principal, premio),
-            hay_commit: env.storage().instance().has(&Clave::Sorteo),
+            sorteo_pendiente: pendiente.is_some(),
+            ronda_drand: pendiente.map(|s| s.ronda_drand),
         }
     }
 
@@ -561,44 +593,38 @@ impl Contract {
 // Selección del ganador
 // ---------------------------------------------------------------------------
 
-/// Elige ganador con probabilidad proporcional al peso.
+/// Elige ganador con probabilidad proporcional al peso congelado.
 ///
-/// La semilla combina el secreto commiteado, la entropía acumulada de los
-/// depósitos y el PRNG de la red. Ver la nota de arriba sobre qué protege cada
-/// uno y qué queda sin cubrir.
-fn elegir(env: &Env, secreto: &BytesN<32>, peso_total: i128) -> Address {
-    // Primero el PRNG de red, antes de resembrar: su semilla sale del hash del
-    // transaction-set, que no se conoce al simular la transacción.
-    let de_red: u64 = env.prng().gen();
-
+/// La semilla es `sha256(entropía ‖ firma ‖ ronda_drand)`. Es determinística
+/// dado lo que queda on-chain, así que cualquiera puede recomputar el sorteo
+/// desde el evento `SorteoEjecutado` y comprobar que el ganador es el que
+/// tenía que ser.
+fn elegir(env: &Env, s: &Sorteo, firma: &BytesN<96>) -> Address {
     let mut material = Bytes::new(env);
-    material.append(&Bytes::from_array(env, &secreto.to_array()));
-    material.append(&Bytes::from_array(env, &entropia(env).to_array()));
-    material.append(&Bytes::from_array(env, &de_red.to_be_bytes()));
-    let semilla = env.crypto().sha256(&material);
+    material.append(&Bytes::from_array(env, &s.entropia.to_array()));
+    material.append(&Bytes::from_array(env, &firma.to_array()));
+    material.append(&Bytes::from_array(env, &s.ronda_drand.to_be_bytes()));
+    let semilla = env.crypto().sha256(&material).to_array();
 
-    env.prng().seed(Bytes::from_array(env, &semilla.to_array()));
+    // 128 bits de la semilla, para no sesgar cuando el peso total pasa de
+    // 2^64 — con depósitos grandes por muchos segundos se llega rápido.
+    let mut n: u128 = 0;
+    for b in &semilla[..16] {
+        n = (n << 8) | (*b as u128);
+    }
+    let sorteado = (n % (s.peso_total as u128)) as i128;
 
-    // Dos u64 para no sesgar cuando el peso total pasa de 2^64. Con depósitos
-    // grandes por muchos segundos se llega rápido.
-    let alto = env.prng().gen::<u64>() as u128;
-    let bajo = env.prng().gen::<u64>() as u128;
-    let sorteado = (((alto << 64) | bajo) % (peso_total as u128)) as i128;
-
-    // Barrido acumulado sobre la lista, que ya está toda en memoria.
-    let ps = participantes(env);
-    let ahora = env.ledger().timestamp();
     let mut acumulado = 0i128;
-    for i in 0..ps.len() {
-        let p = ps.get_unchecked(i);
-        acumulado += peso(&p, ahora);
+    for i in 0..s.boletos.len() {
+        let b = s.boletos.get_unchecked(i);
+        acumulado += b.peso;
         if sorteado < acumulado {
-            return p.addr;
+            return b.addr;
         }
     }
     // Solo se llega acá por redondeo con el último; que gane el último es lo
     // correcto, no un fallback arbitrario.
-    ps.get_unchecked(ps.len() - 1).addr
+    s.boletos.get_unchecked(s.boletos.len() - 1).addr
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +655,18 @@ fn devengar(p: &mut Participante, ahora: u64) {
 
 fn indice_de(ps: &Vec<Participante>, quien: &Address) -> Option<u32> {
     (0..ps.len()).find(|&i| &ps.get_unchecked(i).addr == quien)
+}
+
+/// Lo que la fuente tiene por encima del capital. Cero si perdió: el capital
+/// de nadie se usa para pagar un premio.
+fn premio_disponible(env: &Env, cfg: &Config) -> i128 {
+    let principal = principal(env);
+    let en_fuente = balance_fuente(env, cfg);
+    if en_fuente > principal {
+        en_fuente - principal
+    } else {
+        0
+    }
 }
 
 fn config(env: &Env) -> Config {
@@ -676,8 +714,8 @@ fn entropia(env: &Env) -> BytesN<32> {
         .unwrap_or(BytesN::from_array(env, &[0u8; 32]))
 }
 
-/// Mezcla el depósito en la entropía acumulada. Hace que el sorteo dependa
-/// también de quién entró, cuánto y cuándo, no solo del secreto del keeper.
+/// Mezcla el depósito en la entropía acumulada, para que el sorteo dependa
+/// también de quién entró, cuánto y cuándo — no solo de drand.
 fn mezclar_entropia(env: &Env, quien: &Address, monto: i128) {
     let mut material = Bytes::new(env);
     material.append(&Bytes::from_array(env, &entropia(env).to_array()));

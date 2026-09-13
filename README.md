@@ -21,11 +21,65 @@ Hackathon 12 → 26/09/2026 · Checkpoints 21 y 24/09 · Submission 27/09
 | [IDEAS.md](IDEAS.md) | Las otras 44 ideas que descartamos |
 | [SETUP.md](SETUP.md) | Toolchain y MCP |
 
+> **El producto cambió de rumbo.** Este repo arrancó como ronda rotativa (la
+> vaquita) y ese contrato sigue acá, funcionando y desplegado en testnet. Pero
+> el producto que va al hackathon es **el pozo: ahorro premiado sin pérdida de
+> capital**, el hueco que `GAPS.md` y `EVM-GAPS.md` marcan como el único con
+> cero competidores entre 812 proyectos. Ver [§El pozo](#el-pozo).
+
+## El pozo
+
+`contracts/pozo/`. Todos depositan en un pozo común que se pone a generar
+rendimiento. Al cierre de cada ronda **se sortea el rendimiento entero** entre
+los participantes: uno se lo lleva, **nadie pierde capital**, y el capital se
+puede retirar cuando sea, sin penalidad.
+
+| Función | Quién | Qué hace |
+|---|---|---|
+| `depositar(usuario, monto)` | el usuario | entra al pozo y al sorteo |
+| `retirar(usuario, monto)` | el usuario | saca capital, siempre, aunque haya un sorteo pendiente |
+| `cerrar_ronda()` | **cualquiera** | congela chances y premio; fija una ronda de drand ≥ 10 min en el futuro |
+| `ejecutar_sorteo(firma)` | **cualquiera** | verifica la firma BLS de drand on-chain, elige ganador, paga |
+| `estado()` | — | participantes, total, premio, APY, countdown, ronda de drand pendiente |
+| `chances_bps(usuario)` | — | "tu probabilidad", para la UI |
+
+**El azar sale de [drand](https://drand.love)**, no de Stellar. Es un beacon
+público producido por ~20 organizaciones independientes con una firma BLS
+umbral, una ronda cada 3 segundos. Al cerrar se fija una ronda futura; nadie
+—ni quien cierra, ni un validador de Stellar— conoce su firma todavía. Cuando
+sale, cualquiera la trae y el contrato la verifica con las host functions
+BLS12-381 del Protocolo 22. Sin keeper privilegiado, sin secreto que alguien
+pueda perder: el premio no queda rehén de nadie.
+
+Lo que queda como supuesto de confianza es drand mismo (haría falta que una
+mayoría de sus organizaciones se coludan), y es público y verificable.
+
+Peso = **depósito × tiempo**. Entrar un minuto antes del cierre con diez veces
+más plata da menos chances que haber estado toda la ronda. La fuente de
+rendimiento va detrás de una interfaz mínima (`depositar`, `retirar`,
+`balance`): `contracts/mock_rendimiento/` es la de tests y demo, Blend se
+enchufa detrás sin tocar el sorteo. Costo medido del sorteo con el pozo lleno
+(200 participantes): ~38M instrucciones sobre un límite de 100M.
+
+```bash
+scripts/ensayo-pozo-testnet.sh     # fuente mock + pozo con la clave real de drand
+cd web && SOLO_MIRAR=1 npm run keeper
+```
+
 ## Estado
 
 - ✅ Investigación cerrada, producto definido
 - ✅ Workspace Soroban scaffoldeado y compilando a WASM
 - ✅ 8 skills oficiales de Stellar incluidas en `.claude/skills/`
+- ✅ **Contrato `pozo`** — depósitos, retiro libre, peso depósito × tiempo,
+  sorteo por firma de drand verificada on-chain (BLS12-381), sin roles
+  privilegiados. 32 tests, costo del sorteo medido
+- ✅ Keeper permissionless del pozo (`web/scripts/keeper.ts`) y helper que
+  descomprime la clave de drand para el deploy
+- ⬜ **Deploy del pozo en testnet** ← el primer sorteo real es el primer test
+  de la verificación BLS con una firma de drand de verdad
+- ⬜ Frontend del pozo: participantes, total, APY, premio, countdown
+- ⬜ Adapter real de Blend detrás de la interfaz de la fuente
 - ✅ Contrato `ronda` — turnos, aportes nativos, atribución cross-chain por
   monto etiquetado, morosos y reembolso. 21 tests en verde
 - ✅ Frontend mobile-first en `web/` — conectar wallet, aportar, pedir monto
