@@ -14,7 +14,15 @@
 
 import { descomprimirG2, info } from "../src/lib/drand";
 
-const i = await info();
-console.log(descomprimirG2(i.public_key));
-console.log(i.genesis_time);
-console.log(i.period);
+// Sin top-level await: tsx compila esto como CommonJS y ahí no existe.
+async function main() {
+  const i = await info();
+  console.log(descomprimirG2(i.public_key));
+  console.log(i.genesis_time);
+  console.log(i.period);
+}
+
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
+});

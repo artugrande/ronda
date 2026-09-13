@@ -43,12 +43,13 @@ stellar contract build
 ls -l target/wasm32v1-none/release/pozo.wasm target/wasm32v1-none/release/mock_rendimiento.wasm
 
 paso "Clave pública de drand quicknet (descomprimida)"
-mapfile -t DRAND < <(cd web && npx --yes tsx scripts/drand-pk.ts)
-DRAND_PK="${DRAND[0]}"
-DRAND_GENESIS="${DRAND[1]}"
-DRAND_PERIODO="${DRAND[2]}"
+# Sin mapfile ni offsets negativos: macOS trae bash 3.2 y no los tiene.
+DRAND_SALIDA=$(cd web && npx --yes tsx scripts/drand-pk.ts)
+DRAND_PK=$(sed -n 1p <<<"$DRAND_SALIDA")
+DRAND_GENESIS=$(sed -n 2p <<<"$DRAND_SALIDA")
+DRAND_PERIODO=$(sed -n 3p <<<"$DRAND_SALIDA")
 [[ ${#DRAND_PK} -eq 384 ]] || { echo "la clave no tiene 192 bytes: ${#DRAND_PK} hex" >&2; exit 1; }
-echo "  pk       ${DRAND_PK:0:16}…${DRAND_PK: -16}"
+echo "  pk       ${DRAND_PK:0:16}…${DRAND_PK:368}"
 echo "  genesis  $DRAND_GENESIS"
 echo "  periodo  ${DRAND_PERIODO}s"
 
