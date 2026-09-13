@@ -58,6 +58,27 @@ bajes a 1.91.0 por más que el mensaje del SDK diga que alcanza.
   `disk_read_entries + memory_read_entries` y `write_entries` — que es lo que
   la red cobra, y acotalo por una constante.
 
+## Blend
+
+- **No usar `blend-contract-sdk` como dependencia.** La 2.25 arrastra
+  `soroban-sdk` 25 y el workspace está en la 27; dos majors del SDK no conviven
+  en un contrato (el `Env` de una no es el de la otra). El crate es solo
+  `contractimport!` de sus WASMs más un fixture: hacé lo mismo con nuestra SDK.
+  Los WASMs viven en `contracts/blend_adapter/blend/` y el fixture portado en
+  `blend_adapter/src/testutils.rs`.
+- **`request_type` es un `u32` pelado en el spec** — `RequestType` no existe en
+  el WASM. Supply = 0, Withdraw = 1 (no colateral). Verificado en test: el
+  depósito aparece en `positions.supply`, no en `collateral`.
+- **`b_rate` tiene 12 decimales** en v2. Verificado: con la reserva recién
+  creada, `b_tokens × b_rate / 1e12` da exactamente el capital.
+- **Withdraw devuelve el monto exacto** (Blend redondea los b-tokens que quema
+  hacia arriba). Verificado contra el bytecode real; el pozo se apoya en eso.
+- **Supply puro no toca el oráculo**: en el fixture el oráculo es una dirección
+  cualquiera y todo funciona. Sí hace falta fondear el backstop (50k) y activar
+  el pool (`set_status(3)` + `update_status`) para que acepte depósitos.
+- **El interés no se devenga sin deuda.** Un test con solo Supply ve premio 0.
+  Para ver rendimiento en tests haría falta un mock de oráculo y un borrower.
+
 ## Reglas de SDK que el modelo suele equivocar
 
 El SDK v14 renombró el namespace. Escribí siempre:

@@ -90,7 +90,35 @@ cd web && SOLO_MIRAR=1 npm run keeper
 - ✅ Frontend del pozo en `web/` (`/`): premio en juego, countdown, participantes,
   total, APY, tu capital y tu probabilidad, depositar y retirar. La ronda
   rotativa quedó en `/ronda`
-- ⬜ Adapter real de Blend detrás de la interfaz de la fuente
+- ✅ **Adapter de Blend** (`contracts/blend_adapter/`): Supply no colateral en
+  un pool de Blend v2, testeado contra el bytecode real del protocolo. 8 tests
+  propios más el pozo operando a través de él. Lo que no cubre ningún test es
+  el devengo del interés, porque Blend solo genera cuando alguien pide
+  prestado — eso se ve recién en un pool con actividad
+
+### Enchufar Blend en vez del mock
+
+El pozo se construye apuntando a la fuente, y el adapter tiene que conocer al
+pozo. Se resuelve en tres pasos, siempre en este orden:
+
+```bash
+# 1. el adapter, con un admin que solo sirve para el paso 3
+ADAPTER=$(stellar contract deploy --wasm target/wasm32v1-none/release/blend_adapter.wasm \
+  --source pozo-admin --network testnet -- \
+  --admin "$ADMIN" --pool "$POOL_DE_BLEND" --token "$TOKEN")
+
+# 2. el pozo, con el adapter como fuente (igual que con el mock)
+# 3. el adapter adopta al pozo, una sola vez
+stellar contract invoke --id "$ADAPTER" --source pozo-admin --network testnet -- \
+  fijar_dueno --dueno "$POZO"
+```
+
+`$POOL_DE_BLEND` tiene que ser un pool de Blend v2 que tenga a `$TOKEN` como
+reserva. El adapter usa `Supply` (no colateral): la posición genera interés y
+no puede liquidarse, y no toca el oráculo. Los WASMs de Blend que usan los
+tests están en `contracts/blend_adapter/blend/`, tal como los publica
+`blend-contract-sdk` — no se usa ese crate como dependencia porque arrastra
+otra major de `soroban-sdk`.
 - ✅ Contrato `ronda` — turnos, aportes nativos, atribución cross-chain por
   monto etiquetado, morosos y reembolso. 21 tests en verde
 - ✅ Frontend mobile-first en `web/` — conectar wallet, aportar, pedir monto

@@ -890,3 +890,77 @@ fn no_se_deposita_cero() {
     let mesa = montar(2);
     mesa.c().depositar(&mesa.u(0), &0);
 }
+
+// ---------------------------------------------------------------------------
+// Con Blend de verdad como fuente
+// ---------------------------------------------------------------------------
+
+/// El pozo contra el adapter de Blend y el pool real de Blend v2, en vez del
+/// mock. Prueba que los tres árboles de autorización anidados —usuario → pozo,
+/// pozo → adapter, adapter → pool— componen, y que el capital vuelve entero.
+#[test]
+fn el_pozo_funciona_con_blend_como_fuente() {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+    env.ledger().with_mut(|l| {
+        l.timestamp = ARRANQUE;
+        l.sequence_number = 1_000;
+    });
+
+    let token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let acuñador = token::StellarAssetClient::new(&env, &token);
+    let blend = blend_adapter::testutils::desplegar(&env, &token);
+
+    // adapter → pozo → fijar_dueno(pozo): el pozo se construye apuntando al
+    // adapter, así que el adapter conoce al pozo recién después.
+    let admin = Address::generate(&env);
+    let adapter = env.register(
+        blend_adapter::Contract,
+        (admin.clone(), blend.pool.clone(), token.clone()),
+    );
+    let sk = escalar(&env, 7);
+    let pozo = env.register(
+        Contract,
+        (
+            token.clone(),
+            adapter.clone(),
+            SEMANA,
+            pk_de(&env, &sk),
+            ARRANQUE,
+            DRAND_PERIODO,
+        ),
+    );
+    blend_adapter::ContractClient::new(&env, &adapter).fijar_dueno(&pozo);
+
+    let c = ContractClient::new(&env, &pozo);
+    let tk = token::Client::new(&env, &token);
+    let ana = Address::generate(&env);
+    let beto = Address::generate(&env);
+    acuñador.mint(&ana, &FONDEO);
+    acuñador.mint(&beto, &FONDEO);
+
+    c.depositar(&ana, &CIEN);
+    c.depositar(&beto, &(CIEN * 3));
+    assert_eq!(c.estado().principal, CIEN * 4);
+    assert_eq!(c.estado().participantes, 2);
+    assert_eq!(
+        tk.balance(&blend.pool),
+        CIEN * 4,
+        "todo el capital está en Blend"
+    );
+    assert_eq!(tk.balance(&pozo), 0);
+    assert_eq!(tk.balance(&adapter), 0);
+
+    // Sin nadie que pida prestado, Blend no genera: el premio es 0 y el
+    // sorteo no puede pagar más que eso. El capital, intacto.
+    assert_eq!(c.estado().premio, 0);
+
+    c.retirar(&ana, &CIEN);
+    assert_eq!(tk.balance(&ana), FONDEO, "ana recupera todo, exacto");
+    c.retirar(&beto, &(CIEN * 3));
+    assert_eq!(tk.balance(&beto), FONDEO, "beto también");
+    assert_eq!(c.estado().principal, 0);
+    assert_eq!(tk.balance(&blend.pool), 0);
+}

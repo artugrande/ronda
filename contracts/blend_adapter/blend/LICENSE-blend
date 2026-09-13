@@ -1,0 +1,4 @@
+Los WASMs de este directorio son el Blend Protocol v2 tal como los publica
+blend-contract-sdk 2.25.0 en crates.io (MIT, Script3). Se usan para testear
+el adapter contra el protocolo real y para generar sus clientes tipados con
+`contractimport!`. No se compilaron acá.
