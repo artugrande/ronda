@@ -454,6 +454,73 @@ fn no_se_aporta_dos_veces_al_mismo_turno() {
     c.acreditar(&r, &mesa.m(0));
 }
 
+/// Regresión de un bug encontrado corriendo esto en testnet.
+///
+/// `proximo_turno_at += periodo` dejaba el turno siguiente ya vencido al nacer
+/// si la ronda venía atrasada. Con un período de una semana y una ronda que
+/// nadie cerró en tres, alguien encadenaba tres cierres y dejaba morosos a
+/// miembros que nunca tuvieron chance de aportar.
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn no_se_encadenan_dos_cierres_seguidos() {
+    let (mesa, r) = montar(3);
+    let c = mesa.cliente();
+
+    for i in 0..3u32 {
+        c.acreditar(&r, &mesa.m(i));
+    }
+
+    // Nadie cierra el turno hasta mucho después de vencido.
+    let t = mesa.env.ledger().timestamp();
+    mesa.env
+        .ledger()
+        .with_mut(|l| l.timestamp = t + PERIODO * 5);
+
+    c.ejecutar_turno(&r);
+    // El segundo cierre tiene que rebotar: el turno nuevo recién empieza.
+    c.ejecutar_turno(&r);
+}
+
+#[test]
+fn el_turno_nuevo_arranca_con_un_periodo_completo() {
+    let (mesa, r) = montar(3);
+    let c = mesa.cliente();
+
+    for i in 0..3u32 {
+        c.acreditar(&r, &mesa.m(i));
+    }
+
+    let t = mesa.env.ledger().timestamp();
+    mesa.env
+        .ledger()
+        .with_mut(|l| l.timestamp = t + PERIODO * 5);
+    c.ejecutar_turno(&r);
+
+    let ahora = mesa.env.ledger().timestamp();
+    assert_eq!(
+        c.estado(&r).proximo_turno_at,
+        ahora + PERIODO,
+        "el turno siguiente se cuenta desde el cierre, no desde el horario nominal"
+    );
+}
+
+#[test]
+fn cerrar_en_hora_no_adelanta_el_calendario() {
+    let (mesa, r) = montar(3);
+    let c = mesa.cliente();
+
+    for i in 0..3u32 {
+        c.acreditar(&r, &mesa.m(i));
+    }
+    let nominal = c.estado(&r).proximo_turno_at;
+
+    // Justo a horario: contar desde el cierre da lo mismo que sumar el período.
+    mesa.env.ledger().with_mut(|l| l.timestamp = nominal);
+    c.ejecutar_turno(&r);
+
+    assert_eq!(c.estado(&r).proximo_turno_at, nominal + PERIODO);
+}
+
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
 fn no_se_ejecuta_el_turno_antes_de_tiempo() {

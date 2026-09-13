@@ -552,7 +552,17 @@ impl Contract {
         };
 
         // 3. Avanzar el reloj y cerrar si se acabaron los turnos.
-        r.proximo_turno_at += r.periodo;
+        //
+        // El turno siguiente arranca ahora, no en el horario nominal. Sumar el
+        // período sobre `proximo_turno_at` parece lo natural, pero si la ronda
+        // venía atrasada deja el turno siguiente ya vencido al nacer: se pueden
+        // encadenar cierres y marcar morosos a miembros que nunca tuvieron
+        // chance de aportar.
+        //
+        // Como ejecutar exige `now >= proximo_turno_at`, esto nunca adelanta el
+        // calendario: cuando el turno se cierra en hora, da exactamente lo
+        // mismo que sumar el período.
+        r.proximo_turno_at = env.ledger().timestamp() + r.periodo;
         if r.turno >= n || indice_beneficiario(&env, ronda_id, &r).is_none() {
             if r.turno < n {
                 reembolsar_turno(&env, &mut r, ronda_id);
