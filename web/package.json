@@ -10,8 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "indexer": "tsx scripts/indexer.ts",
-    "keeper": "tsx scripts/keeper.ts",
+    "indexer": "node --env-file=.env.local --import tsx scripts/indexer.ts",
+    "keeper": "node --env-file=.env.local --import tsx scripts/keeper.ts",
     "drand:pk": "tsx scripts/drand-pk.ts"
   },
   "dependencies": {
