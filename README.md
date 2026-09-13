@@ -82,11 +82,15 @@ cd web && SOLO_MIRAR=1 npm run keeper
 - ✅ **Contrato `pozo`** — depósitos, retiro libre, peso depósito × tiempo,
   sorteo por firma de drand verificada on-chain (BLS12-381), sin roles
   privilegiados, Fenwick tree sobre storage con capacidad para un millón de
-  cuentas. 35 tests, footprint y costo medidos
+  cuentas. 37 tests, footprint y costo medidos
 - ✅ Keeper permissionless del pozo (`web/scripts/keeper.ts`) y helper que
   descomprime la clave de drand para el deploy
-- ⬜ **Deploy del pozo en testnet** ← el primer sorteo real es el primer test
-  de la verificación BLS con una firma de drand de verdad
+- ✅ **Pozo corriendo en testnet**: `CB5X4AGGESZWVWLUFMJY7CQJMEA4WR4W7TOSE5V4QM3F5O6IMLBU22FY`
+  (fuente mock `CDJFOATXNVBZO73S3IMXVD4XYR6AEBVCTDUDWMLMX4ZS2WTPAHEAPOFW`, rondas
+  de 10 min). Más de 20 rondas seguidas cerradas y sorteadas por el keeper con
+  firmas reales de drand quicknet: la verificación BLS on-chain está probada
+  contra la red. El primer intento sacó a la luz un árbol de autorización mal
+  armado que los tests no veían (ver `CLAUDE.md`)
 - ✅ Frontend del pozo en `web/` (`/`): premio en juego, countdown, participantes,
   total, APY, tu capital y tu probabilidad, depositar y retirar. La ronda
   rotativa quedó en `/ronda`

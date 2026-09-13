@@ -13,9 +13,9 @@
 # La clave de drand la trae y descomprime web/scripts/drand-pk.ts: el host de
 # Soroban no descomprime puntos y drand los sirve comprimidos.
 #
-# NO SE EJECUTÓ NUNCA CONTRA LA RED. Se escribió sin acceso a Stellar ni a
-# drand. Los invokes de cierre y sorteo del final tampoco: son los que van a
-# validar, por primera vez, la verificación BLS on-chain con una firma real.
+# Corrió contra testnet: deploy, depósitos, cierre y sorteo con firmas reales
+# de drand, más de 20 rondas seguidas. Cada corrida deploya un mock y un pozo
+# nuevos y deja web/.env.local apuntando a ellos.
 #
 set -euo pipefail
 
