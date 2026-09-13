@@ -9,6 +9,23 @@ Kickoff 12/09/2026 · Checkpoints 21 y 24/09 · Submission final 27/09.
 - Cliente: `@stellar/stellar-sdk` v14+ (TypeScript)
 - Red: Testnet
 
+## La versión de Rust está encajonada
+
+Dos restricciones que se pisan, y el error de cada una no menciona la otra:
+
+```
+soroban-sdk 27  pide     >= 1.91.0
+stellar-cli     bloquea  1.81, 1.82, 1.83 y 1.91.0   (generan wasm malo)
+```
+
+`cargo` corta con `rustc X is not supported by the following packages` recién
+después de bajar 178 crates. Y si subís justo a 1.91.0 para callarlo, pasa
+`cargo test` pero `stellar contract build` corta con `use a rust version other
+than 1.81, 1.82, 1.83 or 1.91.0 to build contracts`.
+
+**La ventana real arranca en 1.91.1.** `rust-toolchain.toml` ya la fija; no la
+bajes a 1.91.0 por más que el mensaje del SDK diga que alcanza.
+
 ## Reglas de SDK que el modelo suele equivocar
 
 El SDK v14 renombró el namespace. Escribí siempre:

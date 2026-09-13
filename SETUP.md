@@ -20,9 +20,14 @@ rm -rf /tmp/sds
 
 ## Toolchain
 
-**Rust no necesita setup manual.** `rust-toolchain.toml` fija rustc 1.91.0 —el
-mínimo de `soroban-sdk` 27— y el target `wasm32v1-none`; rustup instala los dos
-solo al entrar al repo.
+**Rust no necesita setup manual.** `rust-toolchain.toml` fija la versión y el
+target `wasm32v1-none`; rustup instala los dos solo al entrar al repo.
+
+No la bajes a mano. La ventana es angosta y las dos restricciones se pisan:
+`soroban-sdk` 27 pide **≥ 1.91.0**, y el CLI de Stellar **bloquea 1.91.0**
+(junto con 1.81–1.83: generan wasm malo). O sea que la única versión que cumplía
+el mínimo del SDK es justo la que el CLI rechaza — la ventana real arranca en
+1.91.1.
 
 Si no tenés rustup y usás el Rust del sistema, el pin no aplica y cargo corta
 con `rustc X is not supported by the following packages` recién después de bajar
@@ -36,14 +41,20 @@ Para el CLI, **usá el binario precompilado, no `cargo install`**: compilar desd
 crates.io falla en un build script de `libdbus-sys` salvo que tengas
 `libdbus-1-dev` instalado, y aun así tarda ~10 minutos.
 
+macOS (Intel o Apple Silicon):
+
+```bash
+brew install stellar-cli
+```
+
+Linux x86_64:
+
 ```bash
 V=28.0.0
 curl -sSL -o cli.tgz "https://github.com/stellar/stellar-cli/releases/download/v${V}/stellar-cli-${V}-x86_64-unknown-linux-gnu.tar.gz"
 tar xzf cli.tgz && sudo install -m755 stellar /usr/local/bin/stellar
 stellar --version
 ```
-
-En macOS: `brew install stellar-cli`.
 
 Verificado end-to-end sin red: `stellar contract init`, `stellar contract build`
 (compila a WASM) y `cargo test` funcionan los tres offline.

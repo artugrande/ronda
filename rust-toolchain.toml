@@ -1,13 +1,17 @@
-# soroban-sdk 27 pide rustc 1.91 como mínimo. Con un toolchain más viejo, cargo
-# corta con "rustc X is not supported by the following packages" antes de
-# compilar una sola línea.
+# La versión de Rust está encajonada entre dos restricciones que se pisan:
 #
-# Fijarlo acá hace que rustup instale y use esta versión solo al entrar al
-# repo, sin que nadie tenga que acordarse de correr `rustup update`.
+#   soroban-sdk 27  pide  >= 1.91.0
+#   stellar-cli     bloquea  1.81, 1.82, 1.83 y 1.91.0
 #
-# Verificado: 21 tests, wasm32v1-none, clippy sin warnings y fmt limpio en
-# 1.91.0 exacto. Si subís soroban-sdk y vuelve a fallar por MSRV, subí esto.
+# El CLI corta con "use a rust version other than 1.81, 1.82, 1.83 or 1.91.0
+# to build contracts" — son versiones que generan wasm malo. O sea que 1.91.0,
+# la única que cumplía el mínimo del SDK, es justo la que el CLI rechaza.
+#
+# La ventana real arranca en 1.91.1. Acá fijamos la última verificada.
+#
+# Verificado sobre esta versión exacta: 21 tests, wasm32v1-none, clippy sin
+# warnings y fmt limpio.
 [toolchain]
-channel = "1.91.0"
+channel = "1.94.1"
 targets = ["wasm32v1-none"]
 components = ["clippy", "rustfmt"]
