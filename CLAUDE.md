@@ -1,4 +1,6 @@
-# Argentina Builder Challenge — proyecto Stellar
+# Zorrito — Argentina Builder Challenge
+
+Ahorro premiado sin pérdida de capital (el `pozo`). Repo `artugrande/zorrito`.
 
 Hackathon BAF × Stellar. Track Genesis (proyecto nuevo desde cero).
 Kickoff 12/09/2026 · Checkpoints 21 y 24/09 · Submission final 27/09.

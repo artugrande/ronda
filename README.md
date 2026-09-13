@@ -1,8 +1,9 @@
-# Ronda
+# Zorrito
 
-Ahorro rotativo multi-cadena en USDT0 sobre Stellar.
-La vaquita de siempre, pero el contrato guarda la plata y cada uno aporta desde
-la cadena donde ya tiene sus dólares.
+Ahorro premiado sin pérdida de capital, sobre Stellar.
+Ponés plata en un pozo, el pozo genera rendimiento en Blend, y cada semana uno
+de los participantes se lleva el rendimiento de todos. El capital de cada uno
+queda intacto y se retira cuando se quiera.
 
 **Argentina Builder Challenge** (BAF × Stellar) · Track Genesis
 Hackathon 12 → 26/09/2026 · Checkpoints 21 y 24/09 · Submission 27/09
@@ -21,11 +22,12 @@ Hackathon 12 → 26/09/2026 · Checkpoints 21 y 24/09 · Submission 27/09
 | [IDEAS.md](IDEAS.md) | Las otras 44 ideas que descartamos |
 | [SETUP.md](SETUP.md) | Toolchain y MCP |
 
-> **El producto cambió de rumbo.** Este repo arrancó como ronda rotativa (la
-> vaquita) y ese contrato sigue acá, funcionando y desplegado en testnet. Pero
-> el producto que va al hackathon es **el pozo: ahorro premiado sin pérdida de
-> capital**, el hueco que `GAPS.md` y `EVM-GAPS.md` marcan como el único con
-> cero competidores entre 812 proyectos. Ver [§El pozo](#el-pozo).
+> **Zorrito es el pozo.** Este repo arrancó como ronda rotativa (la vaquita)
+> y ese contrato sigue acá, funcionando y desplegado en testnet, en
+> `contracts/ronda` y en la ruta `/ronda` de la web. Pero el producto es **el
+> pozo: ahorro premiado sin pérdida de capital**, el hueco que `GAPS.md` y
+> `EVM-GAPS.md` marcan como el único con cero competidores entre 812
+> proyectos. Ver [§El pozo](#el-pozo).
 
 ## El pozo
 
@@ -100,29 +102,59 @@ cd web && SOLO_MIRAR=1 npm run keeper
   el devengo del interés, porque Blend solo genera cuando alguien pide
   prestado — eso se ve recién en un pool con actividad
 
+- ✅ **Keeper serverless** (`web/src/app/api/keeper/route.ts`): la misma
+  lógica que el script, como función en Vercel. La dispara un cron y cada
+  visita a la página que encuentra una ronda vencida o un sorteo pendiente
+- ✅ Script para enchufar Blend real en testnet
+  (`scripts/enchufar-blend-testnet.sh`)
+
 ### Enchufar Blend en vez del mock
 
-El pozo se construye apuntando a la fuente, y el adapter tiene que conocer al
-pozo. Se resuelve en tres pasos, siempre en este orden:
-
 ```bash
-# 1. el adapter, con un admin que solo sirve para el paso 3
-ADAPTER=$(stellar contract deploy --wasm target/wasm32v1-none/release/blend_adapter.wasm \
-  --source pozo-admin --network testnet -- \
-  --admin "$ADMIN" --pool "$POOL_DE_BLEND" --token "$TOKEN")
-
-# 2. el pozo, con el adapter como fuente (igual que con el mock)
-# 3. el adapter adopta al pozo, una sola vez
-stellar contract invoke --id "$ADAPTER" --source pozo-admin --network testnet -- \
-  fijar_dueno --dueno "$POZO"
+scripts/enchufar-blend-testnet.sh          # pool TestnetV2 de Blend, XLM como reserva
+POOL=C... scripts/enchufar-blend-testnet.sh # otro pool
 ```
 
-`$POOL_DE_BLEND` tiene que ser un pool de Blend v2 que tenga a `$TOKEN` como
-reserva. El adapter usa `Supply` (no colateral): la posición genera interés y
-no puede liquidarse, y no toca el oráculo. Los WASMs de Blend que usan los
-tests están en `contracts/blend_adapter/blend/`, tal como los publica
-`blend-contract-sdk` — no se usa ese crate como dependencia porque arrastra
-otra major de `soroban-sdk`.
+Verifica que el pool tenga al token como reserva, deploya el adapter, deploya
+un pozo nuevo apuntando al adapter y le fija al adapter su dueño. El orden lo
+impone la construcción: el pozo se construye apuntando a la fuente, y el
+adapter no puede conocer al pozo antes de que exista. Deja `web/.env.local`
+apuntando al pozo nuevo.
+
+El adapter usa `Supply` (no colateral): la posición genera interés y no puede
+liquidarse, y no toca el oráculo. Los WASMs de Blend que usan los tests están
+en `contracts/blend_adapter/blend/`, tal como los publica `blend-contract-sdk`;
+no se usa ese crate como dependencia porque arrastra otra major de
+`soroban-sdk`. Direcciones de Blend en testnet: `blend-utils/testnet.contracts.json`.
+
+### Deploy en Vercel
+
+El proyecto de Vercel es la carpeta `web/`. Desde ahí, con la CLI:
+
+```bash
+cd web
+npx vercel link                       # crea el proyecto la primera vez
+npx vercel env add NEXT_PUBLIC_RED production     # testnet
+npx vercel env add NEXT_PUBLIC_POZO production    # la dirección del pozo
+npx vercel env add KEEPER_SECRET production       # la clave que paga fees (ver web/.env.local)
+npx vercel --prod
+```
+
+O desde el dashboard: importar el repo, **Root Directory = `web`**, y las
+mismas tres variables. Sin `KEEPER_SECRET` la app anda igual, pero el keeper
+solo mira.
+
+El keeper corre en `/api/keeper`. `web/vercel.json` lo dispara por cron una
+vez por día, que es lo máximo que permite el plan Hobby; en Pro cambiá el
+`schedule` a `*/5 * * * *`. Igual, cada visita a la página que encuentra una
+ronda vencida o un sorteo pendiente lo dispara también, así que con que
+alguien abra la app una vez por semana alcanza. Para verificarlo:
+
+```bash
+curl -s https://<tu-deploy>.vercel.app/api/keeper
+# {"ok":true,"firma":true,"paso":{"accion":"espera","detalle":"ronda 3: 2 participantes, ..."}}
+```
+
 - ✅ Contrato `ronda` — turnos, aportes nativos, atribución cross-chain por
   monto etiquetado, morosos y reembolso. 21 tests en verde
 - ✅ Frontend mobile-first en `web/` — conectar wallet, aportar, pedir monto

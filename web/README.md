@@ -1,6 +1,6 @@
 # web
 
-Frontend mobile-first del contrato `ronda` + el indexer de entregas cross-chain.
+Frontend mobile-first de Zorrito (el `pozo`, en `/`), la ronda rotativa (`/ronda`) y los scripts de keeper e indexer.
 
 La documentación vive en la [raíz del repo](../README.md). Lo mínimo:
 

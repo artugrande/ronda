@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { POZO, RED, pozoConfigurado } from "@/lib/config";
 import {
   apyTexto,
@@ -19,6 +19,34 @@ type Accion = null | "depositar" | "retirar" | "conectar";
 
 /** Cada cuántos segundos se relee el contrato. El premio crece solo. */
 const REFRESCO_S = 20;
+
+/**
+ * Cada cuánto, como mucho, una pestaña abierta le pide al keeper serverless
+ * que haga un paso. El keeper decide solo si hay algo que hacer; esto es para
+ * no martillarlo mientras una ronda vencida espera a drand.
+ */
+const KEEPER_CADA_S = 60;
+
+/**
+ * Le avisa al keeper (`/api/keeper`) que hay trabajo: una ronda vencida con
+ * gente adentro o un sorteo esperando la firma de drand. Cualquier visita
+ * sirve de keeper; el que paga las fees es el server. Devuelve `true` si el
+ * keeper hizo algo, para releer el contrato enseguida.
+ */
+async function empujarKeeper(): Promise<boolean> {
+  try {
+    const r = await fetch("/api/keeper", { method: "POST" });
+    const j = (await r.json()) as { ok: boolean; paso?: { accion: string; tx: string | null } };
+    return Boolean(j.ok && j.paso && j.paso.accion !== "espera" && j.paso.tx);
+  } catch {
+    return false;
+  }
+}
+
+function hayTrabajo(v: Vista, ahora: number): boolean {
+  if (v.sorteoPendiente) return true;
+  return v.participantes > 0 && ahora >= Number(v.cierraAt);
+}
 
 /**
  * Segundos desde epoch, refrescados cada segundo. Va en estado y no leído en
@@ -44,6 +72,7 @@ export default function Home() {
   const [accion, setAccion] = useState<Accion>(null);
   const [cargando, setCargando] = useState(true);
   const ahora = useAhora();
+  const ultimoEmpujon = useRef(0);
 
   const refrescar = useCallback(async (direccion: string | null) => {
     if (!pozoConfigurado) return;
@@ -57,6 +86,14 @@ export default function Home() {
       setMiSaldo(s);
       setMisChances(ch);
       setError(null);
+
+      const t = Math.floor(Date.now() / 1000);
+      if (hayTrabajo(v, t) && t - ultimoEmpujon.current >= KEEPER_CADA_S) {
+        ultimoEmpujon.current = t;
+        if (await empujarKeeper()) {
+          setVista(await estado());
+        }
+      }
     } catch (e) {
       setError(mensaje(e));
     } finally {
@@ -100,7 +137,7 @@ export default function Home() {
     <main className="mx-auto w-full max-w-lg flex-1 px-4 py-6 sm:py-10">
       <header className="mb-6 flex items-baseline justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Pozo</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Zorrito</h1>
           <p className="text-xs text-tenue">Ahorrá. Nadie pierde. Uno gana el rendimiento.</p>
         </div>
         <div className="flex items-center gap-2">

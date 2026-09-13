@@ -2,12 +2,12 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ronda",
-  description: "La vaquita de siempre, pero el contrato guarda la plata",
+  title: "Zorrito",
+  description: "Ahorro premiado. Nadie pierde, uno gana el rendimiento.",
 };
 
-// Mobile-first: la ronda se arma en el grupo de WhatsApp, se entra desde el
-// teléfono. `viewport-fit` deja respirar el notch.
+// Mobile-first: se entra desde el teléfono, desde el link que circula en el
+// grupo. `viewport-fit` deja respirar el notch.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
