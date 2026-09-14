@@ -5,32 +5,49 @@
 
 paso() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
+# Fija una variable en web/.env.local: la reemplaza si está, la agrega si no.
+# El resto del archivo (KEEPER_SECRET incluido) queda como estaba.
+#
+#   fijar_env_local CLAVE VALOR
+fijar_env_local() {
+  local clave="$1" valor="$2" archivo=web/.env.local tmp
+  [[ -f "$archivo" ]] || : >"$archivo"
+  tmp=$(mktemp)
+  grep -v "^${clave}=" "$archivo" >"$tmp" || true
+  echo "${clave}=${valor}" >>"$tmp"
+  mv "$tmp" "$archivo"
+}
+
 # Deja web/.env.local apuntando a un pozo. Conserva el KEEPER_SECRET que ya
 # hubiera; si no hay, usa pozo-cora, la identidad que no deposita: solo paga
 # fees de cierre y sorteo.
 #
-#   escribir_env_local <red> <pozo> <fuente>
+#   escribir_env_local <red> <pozo> <fuente> [variante]
+#
+# La variante es "demo" (10 min, la de siempre) o "semanal". Cada una tiene su
+# propia variable, así la app muestra los dos pozos a la vez.
 escribir_env_local() {
-  local red="$1" pozo="$2" fuente="$3"
+  local red="$1" pozo="$2" fuente="$3" variante="${4:-demo}"
   local archivo=web/.env.local
   local keeper_secret=""
   if [[ -f "$archivo" ]]; then
     keeper_secret=$(sed -n 's/^KEEPER_SECRET=//p' "$archivo" | head -n 1)
   fi
   [[ -n "$keeper_secret" ]] || keeper_secret=$(stellar keys secret pozo-cora)
-  cat >"$archivo" <<ENV
-# Escrito por scripts/. No se sube a git.
-NEXT_PUBLIC_RED=$red
-NEXT_PUBLIC_POZO=$pozo
-
-# keeper (npm run keeper). En Vercel alcanza con NEXT_PUBLIC_* y KEEPER_SECRET.
-RPC_URL=https://soroban-testnet.stellar.org
-PASSPHRASE="Test SDF Network ; September 2015"
-POZO=$pozo
-FUENTE=$fuente
-KEEPER_SECRET=$keeper_secret
-ENV
-  echo "  $archivo apunta a $pozo"
+  fijar_env_local NEXT_PUBLIC_RED "$red"
+  fijar_env_local RPC_URL "https://soroban-testnet.stellar.org"
+  fijar_env_local PASSPHRASE '"Test SDF Network ; September 2015"'
+  fijar_env_local KEEPER_SECRET "$keeper_secret"
+  if [[ "$variante" == semanal ]]; then
+    fijar_env_local NEXT_PUBLIC_POZO_SEMANAL "$pozo"
+    fijar_env_local POZO_SEMANAL "$pozo"
+    fijar_env_local FUENTE_SEMANAL "$fuente"
+  else
+    fijar_env_local NEXT_PUBLIC_POZO "$pozo"
+    fijar_env_local POZO "$pozo"
+    fijar_env_local FUENTE "$fuente"
+  fi
+  echo "  $archivo: pozo $variante → $pozo"
 }
 
 # Crea (si falta) y fondea las cuatro identidades del ensayo.

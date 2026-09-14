@@ -3,8 +3,9 @@
 # Zorrito con Blend de verdad: deploya el adapter contra un pool de Blend v2
 # en testnet y un pozo nuevo que genera ahí, en vez de en el mock.
 #
-#   scripts/enchufar-blend-testnet.sh
-#   POOL=C... scripts/enchufar-blend-testnet.sh     # otro pool
+#   scripts/enchufar-blend-testnet.sh                   # pozo demo, rondas de 10 min
+#   VARIANTE=semanal scripts/enchufar-blend-testnet.sh  # pozo semanal, rondas de 7 días
+#   POOL=C... scripts/enchufar-blend-testnet.sh         # otro pool de Blend
 #
 # Por defecto usa el pool "TestnetV2" que publica Blend en
 # blend-utils/testnet.contracts.json, con el SAC de XLM nativo como reserva.
@@ -24,7 +25,12 @@
 set -euo pipefail
 
 RED=testnet
-PERIODO="${PERIODO:-600}"
+VARIANTE="${VARIANTE:-demo}"
+if [[ "$VARIANTE" == semanal ]]; then
+  PERIODO="${PERIODO:-604800}"
+else
+  PERIODO="${PERIODO:-600}"
+fi
 POOL="${POOL:-CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF}"
 
 cd "$(dirname "$0")/.."
@@ -95,12 +101,13 @@ paso "Estado inicial"
 stellar contract invoke --id "$POZO" --source pozo-admin --network "$RED" -- estado
 
 paso "Escribiendo web/.env.local"
-escribir_env_local "$RED" "$POZO" "$ADAPTER"
+escribir_env_local "$RED" "$POZO" "$ADAPTER" "$VARIANTE"
 
 cat <<FIN
 
 ─────────────────────────────────────────────────────────────────
-Listo. Este pozo genera en Blend. web/.env.local ya apunta a él.
+Listo. Este pozo ($VARIANTE, rondas de ${PERIODO}s) genera en Blend.
+web/.env.local ya lo tiene.
 
 POZO=$POZO
 ADAPTER=$ADAPTER
@@ -119,10 +126,8 @@ El primer depósito es la prueba real: pasa por pozo → adapter → Blend, con
 tres autorizaciones anidadas. Si entra, en https://testnet.blend.capital
 tendría que verse la posición del adapter ($ADAPTER) en el pool.
 
-Para el deploy en Vercel, las variables son:
-
-  NEXT_PUBLIC_RED=testnet
-  NEXT_PUBLIC_POZO=$POZO
-  KEEPER_SECRET=<la de web/.env.local>
+La app en Vercel no lee web/.env.local: las direcciones de testnet están en
+web/src/lib/config.ts. Para que el deploy apunte a este pozo, hay que poner
+$POZO ahí (variante "$VARIANTE") y pushear.
 ─────────────────────────────────────────────────────────────────
 FIN
