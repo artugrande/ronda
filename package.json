@@ -1,7 +1,7 @@
 {
-  "name": "ronda",
+  "name": "zorrito",
   "version": "0.1.0",
-  "description": "Ahorro rotativo multi-cadena en USDT0 sobre Stellar",
+  "description": "Ahorro premiado sin pérdida de capital, sobre Stellar. La web vive en web/.",
   "private": true,
   "license": "ISC",
   "scripts": {
