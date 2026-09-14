@@ -48,7 +48,8 @@ export type Pozo = {
  * de entorno las pisan. Vacío = todavía no hay deploy de esa variante.
  */
 const DIRECCIONES = {
-  mainnet: process.env.NEXT_PUBLIC_POZO_MAINNET || "",
+  // Zorrito en mainnet: semanal, tope 5.000 XLM, generando en el pool Fixed de Blend.
+  mainnet: process.env.NEXT_PUBLIC_POZO_MAINNET || "CAR46DV7YNGNEOAI67SWY3WAQX2IGDWTHBRGDHJSW6EQQDR7XMGKUKQP",
   // Pozo de prueba en testnet, rondas de 10 min, generando en Blend TestnetV2.
   testnet: process.env.NEXT_PUBLIC_POZO || "CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2",
 };

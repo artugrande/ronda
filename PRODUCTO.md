@@ -96,10 +96,11 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
   que el peso: la semana completa de "ahorré hoy" duplica las chances; cada
   referido suma el 10 % de su capital, con tope de la mitad del propio.
 
+- Mainnet: pozo semanal con tope de 5.000 XLM generando en el pool Fixed de
+  Blend v2. Pozo de prueba en testnet (`/test`) con rondas de 10 minutos.
+
 ### Pendiente antes de la submission
 
-- Deploy en mainnet del pozo semanal con tope de capital, y redeploy del
-  pozo de prueba en testnet con el contrato nuevo.
 - Prueba del flujo completo desde la app con Freighter.
 - Video de demo.
 
@@ -120,7 +121,7 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
 | drand se detiene | bajo | No hay sorteo hasta que vuelva. El capital se retira igual. |
 | Keeper caído | bajo | Cualquiera cierra y sortea; la app lo hace sola en cada visita. |
 | Renta de storage | bajo | Las cuentas inactivas meses vencen si nadie las extiende. Cualquiera puede; falta automatizarlo. |
-| MVP sin auditoría | info | Construido desde cero en el hackathon. Testnet. |
+| Sin auditoría | medio | Construido desde cero en el hackathon. Por eso el tope de capital en mainnet. |
 
 ## Qué contesta cada criterio del jurado
 
@@ -128,7 +129,7 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
   on-chain vía drand + BLS12-381, sin roles ni keeper de confianza.
 - **Uso de Stellar**: Soroban, host functions BLS del Protocolo 22, Blend
   como fuente de rendimiento, SAC nativo, Stellar Wallets Kit.
-- **Funciona**: desplegado, con decenas de rondas reales sorteadas en testnet
-  contra Blend y drand. Todo verificable en stellar.expert.
+- **Funciona**: en mainnet, con Blend y drand de verdad, y decenas de rondas
+  sorteadas en testnet. Todo verificable en stellar.expert.
 - **Impacto**: convierte el ahorro en algo que motiva, sin que nadie pueda
   perder. Diseñado para un millón de usuarios desde el primer commit.

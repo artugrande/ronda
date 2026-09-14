@@ -126,8 +126,11 @@ cd web && SOLO_MIRAR=1 npm run keeper
 - ✅ App con dos pozos: la home apunta al de mainnet (semanal) y `/test` al
   de testnet (10 min), enlazado solo desde Docs. Racha, link de invitación y
   referidos en pantalla
-- ⬜ Deploy en mainnet (`scripts/desplegar-mainnet.sh`) y redeploy del pozo
-  de prueba con el contrato nuevo
+- ✅ **Zorrito en mainnet**: pozo `CAR46DV7YNGNEOAI67SWY3WAQX2IGDWTHBRGDHJSW6EQQDR7XMGKUKQP`
+  (semanal, tope 5.000 XLM) a través del adapter
+  `CAQJV4YPTDERFBVGQERDHE7SVAE4VUSOGBKY7HK2RBFCRPJNDAM7RWYN` sobre el pool
+  Fixed de Blend v2 `CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD`.
+  Es el pozo de la home
 
 ### Riesgos, sin maquillaje
 
