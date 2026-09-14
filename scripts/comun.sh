@@ -5,6 +5,11 @@
 
 paso() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
+# Fee de inclusión (stroops) para las transacciones que mandan los scripts. En
+# testnet alcanza la mínima; en mainnet, con tráfico, una baja puede quedar
+# esperando hasta que el cliente se cansa ("transaction submission timeout").
+STELLAR_FEE="${STELLAR_FEE:-100}"
+
 # Fija una variable en web/.env.local: la reemplaza si está, la agrega si no.
 # El resto del archivo (KEEPER_SECRET incluido) queda como estaba.
 #
@@ -92,7 +97,7 @@ leer_drand() {
 # identidad que paga el deploy (pozo-admin por defecto).
 desplegar_pozo() {
   local red="$1" token="$2" fuente="$3" periodo="$4" tope="${5:-0}" origen="${6:-pozo-admin}" pozo
-  pozo=$(stellar contract deploy \
+  pozo=$(stellar contract deploy --fee "$STELLAR_FEE" \
     --wasm target/wasm32v1-none/release/pozo.wasm \
     --source "$origen" --network "$red" \
     -- \
@@ -103,7 +108,7 @@ desplegar_pozo() {
     --drand_pk "$DRAND_PK" \
     --drand_genesis "$DRAND_GENESIS" \
     --drand_periodo "$DRAND_PERIODO")
-  stellar contract extend --id "$pozo" --durability persistent \
+  stellar contract extend --fee "$STELLAR_FEE" --id "$pozo" --durability persistent \
     --ledgers-to-extend 518400 --source "$origen" --network "$red" >/dev/null
   echo "$pozo"
 }

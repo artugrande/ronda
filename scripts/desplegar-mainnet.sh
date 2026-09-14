@@ -33,6 +33,8 @@ TOPE_XLM="${TOPE_XLM:-5000}"
 TOPE=$((TOPE_XLM * 10000000))
 POOL="${POOL:-CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD}"   # Blend v2 "Fixed"
 IDENTIDAD="${IDENTIDAD:-zorrito-mainnet}"
+# 0,01 XLM por transacción: entra en el primer ledger aunque haya tráfico.
+export STELLAR_FEE="${STELLAR_FEE:-100000}"
 
 cd "$(dirname "$0")/.."
 
@@ -104,14 +106,14 @@ fi
 echo "  b_rate $(sed -n 's/.*"b_rate":"\([0-9]*\)".*/\1/p' <<<"$RESERVA" | head -n 1)"
 
 paso "1. Deploy del adapter"
-ADAPTER=$(stellar contract deploy \
+ADAPTER=$(stellar contract deploy --fee "$STELLAR_FEE" \
   --wasm target/wasm32v1-none/release/blend_adapter.wasm \
   --source "$IDENTIDAD" --network "$RED" \
   -- \
   --admin "$ADMIN" \
   --pool "$POOL" \
   --token "$TOKEN")
-stellar contract extend --id "$ADAPTER" --durability persistent \
+stellar contract extend --fee "$STELLAR_FEE" --id "$ADAPTER" --durability persistent \
   --ledgers-to-extend 518400 --source "$IDENTIDAD" --network "$RED" >/dev/null
 echo "  $ADAPTER"
 
@@ -120,7 +122,7 @@ POZO=$(desplegar_pozo "$RED" "$TOKEN" "$ADAPTER" "$PERIODO" "$TOPE" "$IDENTIDAD"
 echo "  $POZO"
 
 paso "3. El adapter aprende quién es su dueño"
-stellar contract invoke --id "$ADAPTER" --source "$IDENTIDAD" --network "$RED" -- \
+stellar contract invoke --fee "$STELLAR_FEE" --id "$ADAPTER" --source "$IDENTIDAD" --network "$RED" -- \
   fijar_dueno --dueno "$POZO"
 echo "  dueño: $POZO"
 
