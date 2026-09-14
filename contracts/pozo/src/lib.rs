@@ -95,6 +95,19 @@ pub const CAPACIDAD: u32 = 1 << LOG_CAPACIDAD;
 const BUMP_UMBRAL: u32 = 500_000;
 const BUMP_EXTENSION: u32 = 518_400; // ~30 días
 
+/// Días seguidos que cuenta la racha. Al séptimo se llega al máximo.
+pub const RACHA_MAX: u32 = 7;
+/// Cada día de racha suma `depósito × periodo × día / RACHA_DIVISOR` de peso.
+/// Con 28 = 1+2+…+7, la semana completa suma exactamente un período entero de
+/// peso: el que ahorra los siete días **duplica** sus chances.
+pub const RACHA_DIVISOR: i128 = 28;
+/// Referidos: el referente pesa como si tuviera este porcentaje del capital
+/// de cada referido, con tope `REF_TOPE_BPS` de su propio capital.
+pub const REF_BPS: i128 = 1_000;
+pub const REF_TOPE_BPS: i128 = 5_000;
+const BPS: i128 = 10_000;
+const SEGUNDOS_DIA: u64 = 86_400;
+
 // ---------------------------------------------------------------------------
 // Errores
 // ---------------------------------------------------------------------------
@@ -120,6 +133,16 @@ pub enum Error {
     SinParticipantes = 10,
     PeriodoInvalido = 11,
     DrandInvalido = 12,
+    /// El depósito superaría el tope de capital del pozo.
+    TopeAlcanzado = 13,
+    /// Ya se marcó la racha hoy (día UTC).
+    YaAhorroHoy = 14,
+    /// La racha exige tener capital adentro.
+    SinDeposito = 15,
+    /// El referente es uno mismo o no existe en el pozo.
+    ReferenteInvalido = 16,
+    /// El referente solo se declara en el primer depósito.
+    NoEsPrimerDeposito = 17,
 }
 
 // ---------------------------------------------------------------------------
@@ -140,8 +163,19 @@ pub struct Cuenta {
     pub ronda: u32,
     /// Segundos desde el inicio de la ronda hasta el último movimiento.
     pub desde: u64,
-    /// Peso ya devengado en la ronda: depósito × segundos, hasta `desde`.
+    /// Peso ya devengado en la ronda: depósito × segundos, hasta `desde`,
+    /// más los bonos de racha de la ronda.
     pub devengado: i128,
+    /// Días seguidos de "ahorré hoy". Se corta al saltear un día.
+    pub racha: u32,
+    /// Último día UTC (timestamp / 86400) en que marcó la racha.
+    pub ultimo_dia: u64,
+    /// Quién la invitó, si alguien. Se fija en el primer depósito.
+    pub referente: Option<Address>,
+    /// Cuántas cuentas la declararon como referente.
+    pub referidos: u32,
+    /// `REF_BPS` del capital de sus referidos. Entra en `a` con tope.
+    pub bono_ref: i128,
 }
 
 /// Un nodo del Fenwick tree. Guarda los coeficientes lineales del peso
@@ -173,6 +207,8 @@ pub struct Config {
     pub fuente: Address,
     /// Duración de una ronda, en segundos.
     pub periodo: u64,
+    /// Capital total máximo. 0 = sin tope. Fijo: el pozo no tiene admin.
+    pub tope: i128,
     /// Clave pública del grupo de drand, G2 sin comprimir.
     pub drand_pk: BytesN<192>,
     /// Unix time de la ronda 1 de drand.
@@ -213,6 +249,8 @@ pub struct Vista {
     pub ronda: u32,
     pub cierra_at: u64,
     pub periodo: u64,
+    /// Capital total máximo. 0 = sin tope.
+    pub tope: i128,
     /// Rendimiento anual en puntos básicos, derivado de lo que reporta la
     /// fuente. `None` mientras no haya con qué calcularlo.
     pub apy_bps: Option<i128>,
@@ -235,7 +273,9 @@ pub enum Clave {
     Indexadas,
     /// Cuentas con depósito > 0 ahora.
     Activas,
-    /// Σ a de todo el árbol = capital total.
+    /// Capital total depositado. Lo que nadie puede perder.
+    Principal,
+    /// Σ a de todo el árbol: capital más bonos de referidos.
     TotalA,
     /// Σ b de todo el árbol para una ronda.
     TotalB(u32),
@@ -265,6 +305,24 @@ pub struct Retiro {
     pub usuario: Address,
     pub monto: i128,
     pub principal: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Racha {
+    #[topic]
+    pub usuario: Address,
+    pub racha: u32,
+    /// Peso (depósito × segundos) que sumó por marcar hoy.
+    pub bono: i128,
+}
+
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Referido {
+    #[topic]
+    pub referente: Address,
+    pub referido: Address,
 }
 
 #[contractevent]
@@ -305,11 +363,13 @@ impl Contract {
     /// puede adelantarse a inicializar con otra configuración.
     ///
     /// No hay admin ni keeper. Después de esto el contrato no tiene llaves.
+    #[allow(clippy::too_many_arguments)]
     pub fn __constructor(
         env: Env,
         token: Address,
         fuente: Address,
         periodo: u64,
+        tope: i128,
         drand_pk: BytesN<192>,
         drand_genesis: u64,
         drand_periodo: u64,
@@ -329,6 +389,7 @@ impl Contract {
                 token,
                 fuente,
                 periodo,
+                tope,
                 drand_pk,
                 drand_genesis,
                 drand_periodo,
@@ -345,6 +406,7 @@ impl Contract {
         inst.set(&Clave::Entropia, &BytesN::from_array(&env, &[0u8; 32]));
         inst.set(&Clave::Indexadas, &0u32);
         inst.set(&Clave::Activas, &0u32);
+        inst.set(&Clave::Principal, &0i128);
         inst.set(&Clave::TotalA, &0i128);
         inst.extend_ttl(BUMP_UMBRAL, BUMP_EXTENSION);
     }
@@ -352,72 +414,60 @@ impl Contract {
     /// Deposita capital y entra al sorteo. El capital se puede retirar entero
     /// cuando se quiera: lo que se sortea es el rendimiento, nunca el capital.
     pub fn depositar(env: Env, usuario: Address, monto: i128) {
+        depositar_interno(&env, usuario, monto, None);
+    }
+
+    /// Primer depósito declarando quién invitó. El referente pasa a pesar como
+    /// si tuviera `REF_BPS` del capital del referido, mientras esté adentro.
+    pub fn depositar_con_referente(env: Env, usuario: Address, monto: i128, referente: Address) {
+        depositar_interno(&env, usuario, monto, Some(referente));
+    }
+
+    /// Marca la racha de hoy. Una vez por día UTC; exige capital adentro.
+    ///
+    /// Cada día seguido suma más peso a la ronda en curso:
+    /// `depósito × periodo × día / RACHA_DIVISOR`. Siete días seguidos suman
+    /// un período entero de peso, o sea duplican las chances. Saltear un día
+    /// vuelve al día 1. El peso entra en la misma unidad que todo lo demás
+    /// (depósito × tiempo), así que la escala del árbol no cambia.
+    pub fn ahorrar_hoy(env: Env, usuario: Address) -> u32 {
         usuario.require_auth();
-        if monto <= 0 {
-            panic_with_error!(&env, Error::MontoInvalido);
-        }
         let cfg = config(&env);
-
-        // El capital entra al contrato y de ahí va derecho a generar.
-        token::Client::new(&env, &cfg.token).transfer(
-            &usuario,
-            env.current_contract_address(),
-            &monto,
-        );
-        invocar_fuente(&env, &cfg, "depositar", monto);
-
-        let ronda = ronda(&env);
-        // Un pozo sin nadie adentro no tiene reloj: la ronda arranca con el
-        // primero que entra. Si no, una ronda que venció vacía se cerraría un
-        // segundo después del primer depósito. Se reinicia solo cuando nadie
-        // tiene peso en la ronda (ni capital ni tiempo devengado), así que a
-        // ningún participante le cambia nada.
-        if principal(&env) == 0 && total_b(&env, ronda) == 0 {
-            let ahora = env.ledger().timestamp();
-            let inst = env.storage().instance();
-            inst.set(&Clave::RondaDesde, &ahora);
-            inst.set(&Clave::CierraAt, &(ahora + cfg.periodo));
-        }
-        let t = t_ronda(&env);
         let mut c = match cuenta(&env, &usuario) {
             Some(c) => c,
-            None => {
-                let n: u32 = env.storage().instance().get(&Clave::Indexadas).unwrap_or(0);
-                if n >= CAPACIDAD {
-                    panic_with_error!(&env, Error::PozoLleno);
-                }
-                env.storage().instance().set(&Clave::Indexadas, &(n + 1));
-                let clave = Clave::Direccion(n + 1);
-                env.storage().persistent().set(&clave, &usuario);
-                extender(&env, &clave);
-                Cuenta {
-                    indice: n + 1,
-                    deposito: 0,
-                    ronda,
-                    desde: t,
-                    devengado: 0,
-                }
-            }
+            None => panic_with_error!(&env, Error::NoParticipa),
+        };
+        if c.deposito <= 0 {
+            panic_with_error!(&env, Error::SinDeposito);
+        }
+        let dia = env.ledger().timestamp() / SEGUNDOS_DIA;
+        if c.ultimo_dia == dia {
+            panic_with_error!(&env, Error::YaAhorroHoy);
+        }
+        let racha = if c.ultimo_dia + 1 == dia {
+            (c.racha + 1).min(RACHA_MAX)
+        } else {
+            1
         };
 
-        let (a0, b0) = coeficientes(&mut c, ronda, t);
-        if c.deposito == 0 {
-            contar_activas(&env, 1);
-        }
-        c.deposito += monto;
-        let (a1, b1) = coeficientes(&mut c, ronda, t);
+        let r = ronda(&env);
+        let t = t_ronda(&env);
+        let (a0, b0) = coeficientes(&mut c, r, t);
+        let bono = c.deposito * (cfg.periodo as i128) * (racha as i128) / RACHA_DIVISOR;
+        c.devengado += bono;
+        c.racha = racha;
+        c.ultimo_dia = dia;
+        let (a1, b1) = coeficientes(&mut c, r, t);
         guardar_cuenta(&env, &usuario, &c);
-        actualizar(&env, ronda, c.indice, a1 - a0, b1 - b0);
+        actualizar(&env, r, c.indice, a1 - a0, b1 - b0);
 
-        let principal = principal(&env);
-        mezclar_entropia(&env, &usuario, monto);
-
-        Deposito {
+        Racha {
             usuario,
-            monto,
-            principal,
+            racha,
+            bono,
         }
         .publish(&env);
+        racha
     }
 
     /// Retira capital. Sin penalidad y en cualquier momento: el producto se
@@ -450,6 +500,8 @@ impl Contract {
         let (a1, b1) = coeficientes(&mut c, ronda, t);
         guardar_cuenta(&env, &usuario, &c);
         actualizar(&env, ronda, c.indice, a1 - a0, b1 - b0);
+        ajustar_principal(&env, -monto);
+        ajustar_referente(&env, &c.referente, ronda, t, -monto);
 
         invocar_fuente(&env, &cfg, "retirar", monto);
         token::Client::new(&env, &cfg.token).transfer(
@@ -485,7 +537,7 @@ impl Contract {
 
         let r = ronda(&env);
         let t_cierre = t_ronda(&env);
-        let peso_total = (t_cierre as i128) * principal(&env) - total_b(&env, r);
+        let peso_total = (t_cierre as i128) * suma_a(&env) - total_b(&env, r);
         if peso_total <= 0 {
             panic_with_error!(&env, Error::SinParticipantes);
         }
@@ -601,6 +653,7 @@ impl Contract {
             ronda: ronda(&env),
             cierra_at: cierra_at(&env),
             periodo: cfg.periodo,
+            tope: cfg.tope,
             apy_bps: apy_bps(&env, principal, premio),
             sorteo_pendiente: pendiente.is_some(),
             ronda_drand: pendiente.map(|s| s.ronda_drand),
@@ -624,7 +677,7 @@ impl Contract {
     pub fn chances_bps(env: Env, usuario: Address) -> i128 {
         let r = ronda(&env);
         let t = t_ronda(&env) as i128;
-        let total = t * principal(&env) - total_b(&env, r);
+        let total = t * suma_a(&env) - total_b(&env, r);
         if total <= 0 {
             return 0;
         }
@@ -637,9 +690,114 @@ impl Contract {
         }
     }
 
+    /// La cuenta entera: capital, racha, referidos. `None` si nunca depositó.
+    pub fn cuenta_de(env: Env, usuario: Address) -> Option<Cuenta> {
+        cuenta(&env, &usuario)
+    }
+
     pub fn config(env: Env) -> Config {
         config(&env)
     }
+}
+
+/// El cuerpo de `depositar` y `depositar_con_referente`.
+fn depositar_interno(env: &Env, usuario: Address, monto: i128, referente: Option<Address>) {
+    usuario.require_auth();
+    if monto <= 0 {
+        panic_with_error!(env, Error::MontoInvalido);
+    }
+    let cfg = config(env);
+    if cfg.tope > 0 && principal(env) + monto > cfg.tope {
+        panic_with_error!(env, Error::TopeAlcanzado);
+    }
+    // El capital entra al contrato y de ahí va derecho a generar.
+    token::Client::new(env, &cfg.token).transfer(&usuario, env.current_contract_address(), &monto);
+    invocar_fuente(env, &cfg, "depositar", monto);
+
+    let ronda = ronda(env);
+    // Un pozo sin nadie adentro no tiene reloj: la ronda arranca con el
+    // primero que entra. Si no, una ronda que venció vacía se cerraría un
+    // segundo después del primer depósito. Se reinicia solo cuando nadie
+    // tiene peso en la ronda (ni capital ni tiempo devengado), así que a
+    // ningún participante le cambia nada.
+    if suma_a(env) == 0 && total_b(env, ronda) == 0 {
+        let ahora = env.ledger().timestamp();
+        let inst = env.storage().instance();
+        inst.set(&Clave::RondaDesde, &ahora);
+        inst.set(&Clave::CierraAt, &(ahora + cfg.periodo));
+    }
+    let t = t_ronda(env);
+    let mut c = match cuenta(env, &usuario) {
+        Some(c) => {
+            if referente.is_some() {
+                panic_with_error!(env, Error::NoEsPrimerDeposito);
+            }
+            c
+        }
+        None => {
+            // El referente se declara acá y no cambia más. Tiene que ser otra
+            // cuenta que ya exista en el pozo.
+            if let Some(q) = &referente {
+                if *q == usuario || cuenta(env, q).is_none() {
+                    panic_with_error!(env, Error::ReferenteInvalido);
+                }
+            }
+            let n: u32 = env.storage().instance().get(&Clave::Indexadas).unwrap_or(0);
+            if n >= CAPACIDAD {
+                panic_with_error!(env, Error::PozoLleno);
+            }
+            env.storage().instance().set(&Clave::Indexadas, &(n + 1));
+            let clave = Clave::Direccion(n + 1);
+            env.storage().persistent().set(&clave, &usuario);
+            extender(env, &clave);
+            Cuenta {
+                indice: n + 1,
+                deposito: 0,
+                ronda,
+                desde: t,
+                devengado: 0,
+                racha: 0,
+                ultimo_dia: 0,
+                referente: referente.clone(),
+                referidos: 0,
+                bono_ref: 0,
+            }
+        }
+    };
+
+    let (a0, b0) = coeficientes(&mut c, ronda, t);
+    if c.deposito == 0 {
+        contar_activas(env, 1);
+    }
+    c.deposito += monto;
+    let (a1, b1) = coeficientes(&mut c, ronda, t);
+    guardar_cuenta(env, &usuario, &c);
+    actualizar(env, ronda, c.indice, a1 - a0, b1 - b0);
+    ajustar_principal(env, monto);
+
+    if let Some(q) = &referente {
+        // Solo en el primer depósito: contar el referido nuevo.
+        if let Some(mut rc) = cuenta(env, q) {
+            rc.referidos += 1;
+            guardar_cuenta(env, q, &rc);
+        }
+        Referido {
+            referente: q.clone(),
+            referido: usuario.clone(),
+        }
+        .publish(env);
+    }
+    ajustar_referente(env, &c.referente, ronda, t, monto);
+
+    let principal = principal(env);
+    mezclar_entropia(env, &usuario, monto);
+
+    Deposito {
+        usuario,
+        monto,
+        principal,
+    }
+    .publish(env);
 }
 
 // ---------------------------------------------------------------------------
@@ -728,7 +886,7 @@ fn actualizar(env: &Env, r: u32, i: u32, da: i128, db: i128) {
     }
 
     let inst = env.storage().instance();
-    inst.set(&Clave::TotalA, &(principal(env) + da));
+    inst.set(&Clave::TotalA, &(suma_a(env) + da));
     inst.set(&Clave::TotalB(r), &(total_b(env, r) + db));
 }
 
@@ -772,9 +930,40 @@ fn coeficientes(c: &mut Cuenta, r: u32, t: u64) -> (i128, i128) {
         c.desde = 0;
         c.devengado = 0;
     }
-    c.devengado += c.deposito * (t.saturating_sub(c.desde) as i128);
+    let a = peso_a(c);
+    c.devengado += a * (t.saturating_sub(c.desde) as i128);
     c.desde = t;
-    (c.deposito, c.deposito * (t as i128) - c.devengado)
+    (a, a * (t as i128) - c.devengado)
+}
+
+/// El coeficiente `a` de una cuenta: su capital más lo que le suman sus
+/// referidos, con tope de `REF_TOPE_BPS` de su propio capital. Sin capital
+/// propio no hay bono: nadie pesa sin plata adentro.
+fn peso_a(c: &Cuenta) -> i128 {
+    let tope = c.deposito * REF_TOPE_BPS / BPS;
+    c.deposito + c.bono_ref.min(tope)
+}
+
+/// Le suma (o resta) al referente `REF_BPS` de un movimiento de capital de
+/// su referido, y lo lleva al árbol. Toca una cuenta y un camino más del
+/// árbol: sigue siendo constante.
+fn ajustar_referente(env: &Env, referente: &Option<Address>, r: u32, t: u64, delta: i128) {
+    let quien = match referente {
+        Some(q) => q,
+        None => return,
+    };
+    let mut c = match cuenta(env, quien) {
+        Some(c) => c,
+        None => return,
+    };
+    let (a0, b0) = coeficientes(&mut c, r, t);
+    c.bono_ref += delta * REF_BPS / BPS;
+    if c.bono_ref < 0 {
+        c.bono_ref = 0;
+    }
+    let (a1, b1) = coeficientes(&mut c, r, t);
+    guardar_cuenta(env, quien, &c);
+    actualizar(env, r, c.indice, a1 - a0, b1 - b0);
 }
 
 /// Segundos desde el inicio de la ronda en curso.
@@ -830,8 +1019,22 @@ fn config(env: &Env) -> Config {
     }
 }
 
-/// Capital total. Es también Σa del árbol entero.
+/// Capital total depositado. Lo que nadie puede perder.
 fn principal(env: &Env) -> i128 {
+    env.storage()
+        .instance()
+        .get(&Clave::Principal)
+        .unwrap_or(0i128)
+}
+
+fn ajustar_principal(env: &Env, delta: i128) {
+    let inst = env.storage().instance();
+    inst.set(&Clave::Principal, &(principal(env) + delta));
+}
+
+/// Σa del árbol entero: capital más bonos de referidos. Es el denominador de
+/// las chances y lo que se congela al cerrar.
+fn suma_a(env: &Env) -> i128 {
     env.storage()
         .instance()
         .get(&Clave::TotalA)

@@ -32,6 +32,7 @@ else
   PERIODO="${PERIODO:-600}"
 fi
 POOL="${POOL:-CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF}"
+TOPE="${TOPE:-0}"   # capital máximo en stroops; 0 = sin tope (es testnet)
 
 cd "$(dirname "$0")/.."
 
@@ -89,7 +90,7 @@ stellar contract extend --id "$ADAPTER" --durability persistent \
 echo "  $ADAPTER"
 
 paso "2. Deploy del pozo, con el adapter como fuente"
-POZO=$(desplegar_pozo "$RED" "$TOKEN" "$ADAPTER" "$PERIODO")
+POZO=$(desplegar_pozo "$RED" "$TOKEN" "$ADAPTER" "$PERIODO" "$TOPE")
 echo "  $POZO"
 
 paso "3. El adapter aprende quién es su dueño"

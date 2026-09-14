@@ -21,6 +21,22 @@ import { CONTRATO, PASSPHRASE_RED, RPC_URL } from "./config";
 
 export const servidor = new rpc.Server(RPC_URL);
 
+/** A qué red hablar. Cada pozo trae la suya; la ronda usa la por defecto. */
+export type Conexion = { rpcUrl: string; passphrase: string };
+export const CONEXION_POR_DEFECTO: Conexion = { rpcUrl: RPC_URL, passphrase: PASSPHRASE_RED };
+
+const servidores = new Map<string, rpc.Server>([[RPC_URL, servidor]]);
+
+/** Un `rpc.Server` por URL, reusado. */
+export function servidorDe(rpcUrl: string): rpc.Server {
+  let s = servidores.get(rpcUrl);
+  if (!s) {
+    s = new rpc.Server(rpcUrl);
+    servidores.set(rpcUrl, s);
+  }
+  return s;
+}
+
 // ---------------------------------------------------------------------------
 // Tipos, espejo de los `#[contracttype]` del contrato
 // ---------------------------------------------------------------------------
@@ -172,13 +188,15 @@ export async function invocarEn(
   metodo: string,
   args: xdr.ScVal[],
   firmar: Firmante,
+  cx: Conexion = CONEXION_POR_DEFECTO,
 ): Promise<string> {
+  const servidor = servidorDe(cx.rpcUrl);
   const cuenta = await servidor.getAccount(fuente);
   const contrato = new Contract(contratoId);
 
   const tx = new TransactionBuilder(
     new Account(cuenta.accountId(), cuenta.sequenceNumber()),
-    { fee: BASE_FEE, networkPassphrase: PASSPHRASE_RED },
+    { fee: BASE_FEE, networkPassphrase: cx.passphrase },
   )
     .addOperation(contrato.call(metodo, ...args))
     .setTimeout(60)
@@ -193,7 +211,7 @@ export async function invocarEn(
   const firmada = await firmar(ensamblada.toXDR());
 
   const enviada = await servidor.sendTransaction(
-    TransactionBuilder.fromXDR(firmada, PASSPHRASE_RED),
+    TransactionBuilder.fromXDR(firmada, cx.passphrase),
   );
   if (enviada.status === "ERROR") {
     throw new Error(`el envío falló: ${JSON.stringify(enviada.errorResult)}`);

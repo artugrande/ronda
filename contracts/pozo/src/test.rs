@@ -14,6 +14,8 @@ const CIEN: i128 = 100_0000000;
 const FONDEO: i128 = 10_000_0000000;
 
 const SEMANA: u64 = 604_800;
+const DIA: u64 = 86_400;
+
 /// 10% anual en el mock, para que el rendimiento sea fácil de verificar a mano.
 const TASA_BPS: i128 = 1_000;
 
@@ -87,6 +89,14 @@ fn firmar_con(env: &Env, sk: &Bls12381Fr, ronda: u64) -> BytesN<96> {
 }
 
 fn montar_con_clave(n: u32, semilla_sk: u32) -> Mesa {
+    montar_completo(n, semilla_sk, 0)
+}
+
+fn montar_con_tope(n: u32, tope: i128) -> Mesa {
+    montar_completo(n, 7, tope)
+}
+
+fn montar_completo(n: u32, semilla_sk: u32, tope: i128) -> Mesa {
     let env = Env::default();
     // `mock_all_auths()` a secas, a propósito. La fuente mueve tokens del pozo
     // un nivel más abajo, y este es el único modo de test que exige que ese
@@ -124,6 +134,7 @@ fn montar_con_clave(n: u32, semilla_sk: u32) -> Mesa {
             token.clone(),
             fuente.clone(),
             SEMANA,
+            tope,
             pk,
             ARRANQUE,
             DRAND_PERIODO,
@@ -975,6 +986,7 @@ fn el_pozo_funciona_con_blend_como_fuente() {
             token.clone(),
             adapter.clone(),
             SEMANA,
+            0i128,
             pk_de(&env, &sk),
             ARRANQUE,
             DRAND_PERIODO,
@@ -1011,4 +1023,188 @@ fn el_pozo_funciona_con_blend_como_fuente() {
     assert_eq!(tk.balance(&beto), FONDEO, "beto también");
     assert_eq!(c.estado().principal, 0);
     assert_eq!(tk.balance(&blend.pool), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Racha, referidos y tope
+// ---------------------------------------------------------------------------
+
+#[test]
+fn siete_dias_de_racha_duplican_las_chances() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.depositar(&mesa.u(1), &CIEN);
+
+    // El primero marca cada día de la semana; el segundo no hace nada.
+    for dia in 1..=7u32 {
+        assert_eq!(c.ahorrar_hoy(&mesa.u(0)), dia);
+        mesa.avanzar(DIA);
+    }
+
+    // Misma plata, mismo tiempo: el de la racha completa pesa el doble.
+    assert_eq!(c.chances_bps(&mesa.u(0)), 6_666);
+    assert_eq!(c.chances_bps(&mesa.u(1)), 3_333);
+    assert_eq!(c.cuenta_de(&mesa.u(0)).unwrap().racha, 7);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #14)")]
+fn la_racha_se_marca_una_vez_por_dia() {
+    let mesa = montar(1);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.ahorrar_hoy(&mesa.u(0));
+    mesa.avanzar(3_600);
+    c.ahorrar_hoy(&mesa.u(0));
+}
+
+#[test]
+fn saltear_un_dia_reinicia_la_racha() {
+    let mesa = montar(1);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    assert_eq!(c.ahorrar_hoy(&mesa.u(0)), 1);
+    mesa.avanzar(DIA);
+    assert_eq!(c.ahorrar_hoy(&mesa.u(0)), 2);
+    mesa.avanzar(2 * DIA);
+    assert_eq!(
+        c.ahorrar_hoy(&mesa.u(0)),
+        1,
+        "un día sin marcar vuelve al 1"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #15)")]
+fn la_racha_exige_capital_adentro() {
+    let mesa = montar(1);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.retirar(&mesa.u(0), &CIEN);
+    c.ahorrar_hoy(&mesa.u(0));
+}
+
+#[test]
+fn la_racha_no_se_lleva_a_la_ronda_siguiente() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.depositar(&mesa.u(1), &CIEN);
+    for _ in 0..7 {
+        c.ahorrar_hoy(&mesa.u(0));
+        mesa.avanzar(DIA);
+    }
+    mesa.sortear();
+    // Ronda nueva: el bono de la anterior no cuenta, la racha sí sigue viva.
+    mesa.avanzar(SEMANA);
+    assert_eq!(c.chances_bps(&mesa.u(0)), 5_000);
+    assert_eq!(c.chances_bps(&mesa.u(1)), 5_000);
+}
+
+#[test]
+fn el_referente_pesa_como_si_tuviera_el_diez_por_ciento_del_referido() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.depositar_con_referente(&mesa.u(1), &CIEN, &mesa.u(0));
+    mesa.avanzar(SEMANA);
+
+    // a(u0) = 100 + 10, a(u1) = 100 → 110/210 y 100/210.
+    assert_eq!(c.chances_bps(&mesa.u(0)), 5_238);
+    assert_eq!(c.chances_bps(&mesa.u(1)), 4_761);
+    let cta = c.cuenta_de(&mesa.u(0)).unwrap();
+    assert_eq!(cta.referidos, 1);
+    assert_eq!(cta.bono_ref, CIEN / 10);
+    assert_eq!(c.cuenta_de(&mesa.u(1)).unwrap().referente, Some(mesa.u(0)));
+}
+
+#[test]
+fn el_bono_de_referidos_tiene_tope_y_sigue_al_capital_del_referido() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    // Un referido con cien veces más plata: el bono sería 10×CIEN, pero el
+    // tope es la mitad del capital propio.
+    c.depositar_con_referente(&mesa.u(1), &(CIEN * 100), &mesa.u(0));
+    mesa.avanzar(SEMANA);
+    // a(u0) = 100 + 50 = 150; a(u1) = 10.000 → 150/10.150.
+    assert_eq!(c.chances_bps(&mesa.u(0)), 147);
+
+    // El referido se va: el bono se va con él.
+    c.retirar(&mesa.u(1), &(CIEN * 100));
+    assert_eq!(c.cuenta_de(&mesa.u(0)).unwrap().bono_ref, 0);
+}
+
+#[test]
+fn sin_capital_propio_no_hay_bono_de_referidos() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.depositar_con_referente(&mesa.u(1), &CIEN, &mesa.u(0));
+    c.retirar(&mesa.u(0), &CIEN);
+    mesa.avanzar(SEMANA);
+    // Retiró al instante: no devengó nada y el bono vale 0 sin capital propio.
+    assert_eq!(c.chances_bps(&mesa.u(0)), 0);
+    assert_eq!(c.chances_bps(&mesa.u(1)), 10_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn no_se_puede_ser_referente_de_uno_mismo() {
+    let mesa = montar(1);
+    mesa.c()
+        .depositar_con_referente(&mesa.u(0), &CIEN, &mesa.u(0));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #16)")]
+fn el_referente_tiene_que_existir() {
+    let mesa = montar(2);
+    mesa.c()
+        .depositar_con_referente(&mesa.u(1), &CIEN, &mesa.u(0));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #17)")]
+fn el_referente_solo_va_en_el_primer_deposito() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.depositar(&mesa.u(1), &CIEN);
+    c.depositar_con_referente(&mesa.u(1), &CIEN, &mesa.u(0));
+}
+
+#[test]
+fn el_capital_no_incluye_los_bonos() {
+    let mesa = montar(2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    c.depositar_con_referente(&mesa.u(1), &CIEN, &mesa.u(0));
+    c.ahorrar_hoy(&mesa.u(0));
+    assert_eq!(
+        c.estado().principal,
+        2 * CIEN,
+        "el principal es plata, no peso"
+    );
+    mesa.avanzar(SEMANA);
+    let ganador = mesa.sortear();
+    // Nadie pierde, con o sin bonos.
+    for i in 0..2u32 {
+        assert_eq!(c.saldo(&mesa.u(i)), CIEN);
+    }
+    assert!(ganador == mesa.u(0) || ganador == mesa.u(1));
+}
+
+#[test]
+fn el_tope_frena_los_depositos_pero_no_los_retiros() {
+    let mesa = montar_con_tope(2, CIEN + CIEN / 2);
+    let c = mesa.c();
+    c.depositar(&mesa.u(0), &CIEN);
+    assert_eq!(c.estado().tope, CIEN + CIEN / 2);
+    let r = c.try_depositar(&mesa.u(1), &CIEN);
+    assert!(r.is_err(), "superaría el tope");
+    c.depositar(&mesa.u(1), &(CIEN / 2));
+    c.retirar(&mesa.u(0), &CIEN);
+    c.depositar(&mesa.u(1), &CIEN);
 }

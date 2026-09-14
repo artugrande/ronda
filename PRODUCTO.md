@@ -92,19 +92,23 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
 - App móvil-first: premio, countdown, APY de Blend, tu posición, depositar y
   retirar, últimos ganadores, docs.
 
+- Racha diaria y referidos, en el contrato y en la app, en la misma unidad
+  que el peso: la semana completa de "ahorré hoy" duplica las chances; cada
+  referido suma el 10 % de su capital, con tope de la mitad del propio.
+
 ### Pendiente antes de la submission
 
-- Pozo semanal en testnet (misma receta, `VARIANTE=semanal`).
+- Deploy en mainnet del pozo semanal con tope de capital, y redeploy del
+  pozo de prueba en testnet con el contrato nuevo.
 - Prueba del flujo completo desde la app con Freighter.
 - Video de demo.
 
 ### Fuera de alcance
 
-- Mainnet. Hace falta un pool de Blend con el token elegido (USDC es el
-  candidato), auditoría y un límite de depósito inicial.
-- Streak diario y referidos como multiplicadores de chances. Diseñados,
-  no construidos: cambian la garantía de "peso = plata × tiempo" y merecen
-  discusión aparte.
+- Un pozo en USDC. Es el mismo código con otro token; XLM va primero porque
+  no necesita trustline.
+- Auditoría. Hasta entonces, el pozo de mainnet tiene un tope de capital fijo
+  en el contrato.
 - Extender la renta de storage de cuentas inactivas desde el keeper.
 
 ## Riesgos, dichos

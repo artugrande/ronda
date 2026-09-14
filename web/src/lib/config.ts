@@ -2,14 +2,14 @@ import { Networks } from "@stellar/stellar-sdk";
 
 export type Red = "testnet" | "mainnet";
 
-const RPC: Record<Red, string> = {
+export const RPC: Record<Red, string> = {
   testnet: "https://soroban-testnet.stellar.org",
-  mainnet: "https://mainnet.stellar.org",
+  mainnet: "https://mainnet.sorobanrpc.com",
 };
 
 // Nunca hardcodear el passphrase: un mismatch da `tx_bad_auth`, que parece
 // error de red pero no lo es. Ver CLAUDE.md.
-const PASSPHRASE: Record<Red, string> = {
+export const PASSPHRASE: Record<Red, string> = {
   testnet: Networks.TESTNET,
   mainnet: Networks.PUBLIC,
 };
@@ -18,59 +18,74 @@ function leerRed(valor: string | undefined): Red {
   return valor === "mainnet" ? "mainnet" : "testnet";
 }
 
+/** La red por defecto (la de la ronda rotativa y de lo que no es un pozo). */
 export const RED = leerRed(process.env.NEXT_PUBLIC_RED);
 export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || RPC[RED];
 export const PASSPHRASE_RED = PASSPHRASE[RED];
 
 // ---------------------------------------------------------------------------
-// Pozos
+// Pozos: el principal vive en mainnet, el de prueba en testnet
 // ---------------------------------------------------------------------------
 
-export type ClavePozo = "demo" | "semanal";
+export type ClavePozo = "principal" | "test";
 
 export type Pozo = {
   clave: ClavePozo;
   /** Contract id. */
   id: string;
+  red: Red;
+  rpcUrl: string;
+  passphrase: string;
   nombre: string;
   /** Cómo se explica la duración de la ronda en la pantalla. */
   ritmo: string;
+  /** La ruta de la app donde se muestra. */
+  ruta: string;
 };
 
 /**
- * Direcciones en testnet, para que la app ande sin configurar nada. Las
- * variables de entorno las pisan, y en mainnet son obligatorias.
+ * Direcciones fijas, para que la app ande sin configurar nada. Las variables
+ * de entorno las pisan. Vacío = todavía no hay deploy de esa variante.
  */
-const TESTNET: Record<ClavePozo, string> = {
-  demo: "CCAM3QUEKETEFA4TL27TD63ZD5LB646NJJF4OOWRQBP2RZ6O4Q7HWHRZ",
-  semanal: "",
+const DIRECCIONES = {
+  mainnet: process.env.NEXT_PUBLIC_POZO_MAINNET || "",
+  // Pozo de prueba en testnet, rondas de 10 min, generando en Blend TestnetV2.
+  testnet: process.env.NEXT_PUBLIC_POZO || "CCAM3QUEKETEFA4TL27TD63ZD5LB646NJJF4OOWRQBP2RZ6O4Q7HWHRZ",
 };
 
-function direccion(clave: ClavePozo, env: string | undefined): string {
-  if (env) return env;
-  return RED === "testnet" ? TESTNET[clave] : "";
+function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
+  if (!id) return null;
+  const principal = clave === "principal";
+  return {
+    clave,
+    id,
+    red,
+    rpcUrl: RPC[red],
+    passphrase: PASSPHRASE[red],
+    nombre: principal ? "Zorrito" : "Pozo de prueba",
+    ritmo: principal
+      ? "Se sortea una vez por semana"
+      : "Rondas de 10 minutos en testnet, para verlo funcionar",
+    ruta: principal ? "/" : "/test",
+  };
 }
 
-/** Los pozos que muestra la app, en el orden de las pestañas. Sin id, no está. */
-export const POZOS: Pozo[] = (
-  [
-    {
-      clave: "semanal",
-      id: direccion("semanal", process.env.NEXT_PUBLIC_POZO_SEMANAL),
-      nombre: "Semanal",
-      ritmo: "Se sortea una vez por semana",
-    },
-    {
-      clave: "demo",
-      id: direccion("demo", process.env.NEXT_PUBLIC_POZO),
-      nombre: "Demo · 10 min",
-      ritmo: "Una ronda cada 10 minutos, para verlo funcionar",
-    },
-  ] satisfies Pozo[]
-).filter((p) => p.id.length > 0);
+/** El pozo de prueba: testnet, rondas cortas. Solo se enlaza desde Docs. */
+export const TEST: Pozo | null = armar("test", "testnet", DIRECCIONES.testnet);
 
-/** El pozo por defecto: el semanal si existe, si no el que haya. */
-export const POZO = POZOS[0]?.id ?? "";
+/**
+ * El pozo de la home. Mainnet cuando está desplegado; hasta entonces, el de
+ * prueba, con la red a la vista, para que la app nunca quede vacía.
+ */
+export const PRINCIPAL: Pozo | null =
+  armar("principal", "mainnet", DIRECCIONES.mainnet) ??
+  (TEST ? { ...TEST, clave: "principal", ruta: "/" } : null);
+
+/** Todos los pozos que hay que atender (keeper) y mostrar. Sin repetidos. */
+export const POZOS: Pozo[] = [PRINCIPAL, TEST].filter(
+  (p, i, todos): p is Pozo => p != null && todos.findIndex((q) => q?.id === p.id) === i,
+);
+
 export const pozoConfigurado = POZOS.length > 0;
 
 // ---------------------------------------------------------------------------

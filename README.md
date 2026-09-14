@@ -118,8 +118,15 @@ cd web && SOLO_MIRAR=1 npm run keeper
 - ✅ Script para enchufar Blend real en testnet
   (`scripts/enchufar-blend-testnet.sh`), con `VARIANTE=semanal` para el pozo
   de 7 días
-- ⬜ Pozo semanal en testnet y prueba del flujo completo desde la app con
-  Freighter
+- ✅ **Racha diaria y referidos en el contrato**, en la misma unidad que el
+  peso (plata × tiempo): siete días seguidos de "ahorré hoy" duplican las
+  chances; cada referido suma el 10 % de su capital con tope de la mitad del
+  propio. Tope de capital por pozo para mainnet. 50 tests
+- ✅ App con dos pozos: la home apunta al de mainnet (semanal) y `/test` al
+  de testnet (10 min), enlazado solo desde Docs. Racha, link de invitación y
+  referidos en pantalla
+- ⬜ Deploy en mainnet (`scripts/desplegar-mainnet.sh`) y redeploy del pozo
+  de prueba con el contrato nuevo
 
 ### Riesgos, sin maquillaje
 
@@ -142,9 +149,15 @@ cd web && SOLO_MIRAR=1 npm run keeper
 ### Enchufar Blend en vez del mock
 
 ```bash
-scripts/enchufar-blend-testnet.sh          # pool TestnetV2 de Blend, XLM como reserva
+scripts/enchufar-blend-testnet.sh          # testnet: pool TestnetV2 de Blend, rondas de 10 min
+scripts/desplegar-mainnet.sh               # mainnet: pool Fixed de Blend, semanal, con tope
 POOL=C... scripts/enchufar-blend-testnet.sh # otro pool
 ```
+
+El de mainnet necesita una identidad de la CLI con XLM (`IDENTIDAD`, por
+defecto `zorrito-mainnet`) y pone un tope de capital (`TOPE_XLM`, 5.000 por
+defecto) porque es plata real en un contrato sin auditoría. Las direcciones
+van fijas en `web/src/lib/config.ts`; la app no necesita variables en Vercel.
 
 Verifica que el pool tenga al token como reserva, deploya el adapter, deploya
 un pozo nuevo apuntando al adapter y le fija al adapter su dueño. El orden lo

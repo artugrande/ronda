@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Marco } from "@/components/Marco";
-import { POZOS, RED } from "@/lib/config";
+import { PRINCIPAL, TEST } from "@/lib/config";
 import { explorer } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -10,14 +10,14 @@ export const metadata: Metadata = {
     "Cómo está hecho Zorrito: el pozo, el sorteo por peso, la aleatoriedad con drand verificada on-chain, Blend como fuente de rendimiento, y el stack sobre Stellar.",
 };
 
-const BLEND_POOL = "CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF";
-const ADAPTER_DEMO = "CBWGO6FAY26JELTELES7ISYXEV6LWRUK3GZS2VZE2AV25SMPAWD27TMO";
+const BLEND_TESTNET = "CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF";
+const BLEND_MAINNET = "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD";
 const DRAND_PK =
   "83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a";
 
 export default function Docs() {
-  const semanal = POZOS.find((p) => p.clave === "semanal");
-  const demo = POZOS.find((p) => p.clave === "demo");
+  const principal = PRINCIPAL;
+  const test = TEST;
 
   return (
     <Marco activo="docs" docs ancho="max-w-2xl">
@@ -47,7 +47,7 @@ export default function Docs() {
             que pagan los que piden prestado se acumula como premio.
           </Paso>
           <Paso n={3} titulo="La ronda cierra">
-            Al vencer el plazo (una semana, o 10 minutos en el pozo demo), cualquiera puede
+            Al vencer el plazo (una semana; 10 minutos en el pozo de prueba), cualquiera puede
             cerrarla. El premio y las chances de cada uno quedan congelados en ese instante.
           </Paso>
           <Paso n={4} titulo="drand decide">
@@ -80,6 +80,48 @@ export default function Docs() {
         <p>
           Retirar no borra lo ya devengado. Si tuviste plata adentro tres días y la sacás, esos
           tres días siguen contando para el sorteo de esa ronda.
+        </p>
+
+        <h3 id="racha">🔥 La racha diaria</h3>
+        <p>
+          Una vez por día (UTC) podés marcar <strong>&quot;Ahorré hoy&quot;</strong>. Cada día
+          seguido suma peso a la ronda en curso, y cada día suma más que el anterior:
+        </p>
+        <div className="formula">bono del día k = depósito × (duración de la ronda) × k / 28</div>
+        <p>
+          Como 1+2+…+7 = 28, los siete días seguidos suman exactamente una ronda entera de peso:
+          quien marca todos los días <strong>duplica</strong> sus chances respecto de alguien con
+          la misma plata que no marca ninguno. Saltear un día vuelve al día 1. El bono es de la
+          ronda en que se marca; la ronda siguiente arranca de cero, como todo lo demás.
+        </p>
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>Días seguidos</th>
+              <th>Peso extra acumulado</th>
+              <th>Chances vs. no marcar</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>3,6 % de una ronda</td><td>×1,04</td></tr>
+            <tr><td>3</td><td>21 %</td><td>×1,21</td></tr>
+            <tr><td>5</td><td>54 %</td><td>×1,54</td></tr>
+            <tr><td>7 🏆</td><td>100 %</td><td className="bien">×2</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="referidos">🤝 Referidos</h3>
+        <p>
+          Tu link de invitación es tu dirección. Quien entra con él, en su{" "}
+          <strong>primer depósito</strong>, te declara como referente, y desde ese momento pesás
+          como si tuvieras el <strong>10 % de su capital</strong>, mientras esté adentro. Si
+          retira, el bono baja con él.
+        </p>
+        <div className="formula">peso base = tu capital + min(10 % del capital de tus referidos, 50 % de tu capital)</div>
+        <p>
+          El tope de la mitad de tu propio capital es lo que hace que no convenga inventarse
+          referidos: sin plata propia adentro no hay bono, y con plata propia el bono nunca vale
+          más que la mitad de ella. Traer amigos suma; traer cuentas vacías no.
         </p>
 
         <hr />
@@ -187,13 +229,29 @@ export default function Docs() {
 
         <hr />
 
+        <h2 id="probar">🧪 Probalo sin esperar una semana</h2>
+        <p>
+          El pozo de la home corre en mainnet con rondas semanales. Para ver el ciclo entero en
+          minutos hay un <strong>pozo de prueba en testnet</strong>, con rondas de 10 minutos y
+          XLM de prueba:{" "}
+          {test ? <Link href="/test">zorritostellar.vercel.app/test</Link> : <em>en deploy</em>}.
+          Es el mismo contrato, el mismo Blend (su pool de testnet) y el mismo drand. XLM de
+          testnet gratis en{" "}
+          <a href="https://laboratory.stellar.org/#account-creator?network=test" target="_blank" rel="noopener">
+            el laboratorio de Stellar
+          </a>
+          .
+        </p>
+
+        <hr />
+
         <h2 id="blend">🌊 Blend: de dónde sale el premio</h2>
         <p>
           <a href="https://blend.capital" target="_blank" rel="noopener">
             Blend
           </a>{" "}
           es el protocolo de préstamos de Stellar. El pozo deposita el capital de todos como{" "}
-          <strong>Supply</strong> en un pool de Blend v2: una posición que presta y cobra interés
+          <strong>Supply</strong> en un pool de Blend v2 (Fixed en mainnet, TestnetV2 en testnet): una posición que presta y cobra interés
           pero que no se usa como colateral, así que no tiene deuda y no puede ser liquidada.
         </p>
         <ul>
@@ -238,8 +296,9 @@ export default function Docs() {
               </td>
               <td>
                 Rust + Soroban (<code>soroban-sdk</code> 27). Tres contratos: el pozo, el adapter
-                de Blend y un mock de rendimiento para tests. 45 tests, incluida la verificación
-                BLS con claves propias y el pozo operando contra el bytecode real de Blend.
+                de Blend y un mock de rendimiento para tests. 58 tests, incluida la verificación
+                BLS con claves propias, la racha, los referidos y el pozo operando contra el
+                bytecode real de Blend.
               </td>
             </tr>
             <tr>
@@ -257,8 +316,8 @@ export default function Docs() {
                 <strong>Rendimiento</strong>
               </td>
               <td>
-                Blend v2, pool TestnetV2, reserva XLM. Integrado con <code>contractimport!</code>{" "}
-                de los WASM oficiales.
+                Blend v2, reserva XLM: pool Fixed en mainnet, TestnetV2 en testnet. Integrado
+                con <code>contractimport!</code> de los WASM oficiales.
               </td>
             </tr>
             <tr>
@@ -284,13 +343,13 @@ export default function Docs() {
 
         <hr />
 
-        <h2 id="contratos">📋 Contratos en Stellar {RED}</h2>
-        {semanal && (
-          <Direccion etiqueta="Pozo semanal" id={semanal.id} tipo="contract" />
+        <h2 id="contratos">📋 Contratos</h2>
+        {principal && principal.red === "mainnet" && (
+          <Direccion etiqueta="Pozo Zorrito · mainnet · semanal" id={principal.id} red="mainnet" />
         )}
-        {demo && <Direccion etiqueta="Pozo demo · rondas de 10 min" id={demo.id} tipo="contract" />}
-        <Direccion etiqueta="Adapter de Blend (pozo demo)" id={ADAPTER_DEMO} tipo="contract" />
-        <Direccion etiqueta="Pool de Blend v2 (TestnetV2)" id={BLEND_POOL} tipo="contract" />
+        <Direccion etiqueta="Pool de Blend v2 · mainnet (Fixed)" id={BLEND_MAINNET} red="mainnet" />
+        {test && <Direccion etiqueta="Pozo de prueba · testnet · 10 min" id={test.id} red="testnet" />}
+        <Direccion etiqueta="Pool de Blend v2 · testnet (TestnetV2)" id={BLEND_TESTNET} red="testnet" />
         <div className="addr-box">
           <span className="addr-label">drand quicknet · clave pública del grupo (G2)</span>
           {DRAND_PK.slice(0, 32)}…{DRAND_PK.slice(-32)}
@@ -339,9 +398,11 @@ export default function Docs() {
           en cada uso; para cuentas inactivas durante meses hace falta que alguien las extienda
           (cualquiera puede). Pendiente de automatizar en el keeper.
         </Riesgo>
-        <Riesgo nivel="info" titulo="Es un MVP en testnet">
-          Construido desde cero durante el hackathon. Sin auditoría formal. No lo uses con plata
-          que no puedas perder hasta que la tenga.
+        <Riesgo nivel="medio" titulo="Contrato nuevo, sin auditoría">
+          Construido desde cero durante el hackathon. El pozo de mainnet tiene un{" "}
+          <strong>tope de capital</strong> fijo en el contrato justamente por esto: limita cuánto
+          puede haber adentro hasta que una auditoría diga que se puede subir. No pongas plata
+          que no puedas perder.
         </Riesgo>
 
         <hr />
@@ -370,9 +431,13 @@ export default function Docs() {
           generando. El keeper y cada visita a la app la cierran solas.
         </Faq>
         <Faq q="¿Por qué XLM y no un stablecoin?">
-          Porque en testnet es el activo que existe con un pool de Blend activo. El contrato es
-          agnóstico: se construye con cualquier token que Blend acepte como reserva. En mainnet
-          el candidato natural es USDC.
+          Porque no necesita trustline: cualquier cuenta de Stellar ya lo tiene, y eso saca un
+          paso del camino de entrada. El contrato es agnóstico: se construye con cualquier token
+          que Blend acepte como reserva, y un pozo en USDC es el mismo código con otro token.
+        </Faq>
+        <Faq q="¿Puedo tener referidos sin poner plata?">
+          Podés, pero no te suman: el bono de referidos vale como mucho la mitad de tu propio
+          capital, y sin capital vale cero.
         </Faq>
 
         <p className="mt-8 text-center text-sm">
@@ -425,21 +490,13 @@ function Faq({ q, children }: { q: string; children: React.ReactNode }) {
   );
 }
 
-function Direccion({
-  etiqueta,
-  id,
-  tipo,
-}: {
-  etiqueta: string;
-  id: string;
-  tipo: "contract" | "account";
-}) {
+function Direccion({ etiqueta, id, red }: { etiqueta: string; id: string; red: string }) {
   return (
     <div className="addr-box">
       <span className="addr-label">{etiqueta}</span>
       {id}
       <br />
-      <a href={explorer(RED, tipo, id)} target="_blank" rel="noopener">
+      <a href={explorer(red, "contract", id)} target="_blank" rel="noopener">
         Ver en stellar.expert ↗
       </a>
     </div>

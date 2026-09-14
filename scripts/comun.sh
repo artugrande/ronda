@@ -86,20 +86,24 @@ leer_drand() {
 
 # Deploya el pozo con su constructor y extiende el TTL.
 #
-#   desplegar_pozo <red> <token> <fuente> <periodo>   → imprime la dirección
+#   desplegar_pozo <red> <token> <fuente> <periodo> [tope] [origen]   → imprime la dirección
+#
+# El tope es el capital total máximo en stroops; 0 = sin tope. `origen` es la
+# identidad que paga el deploy (pozo-admin por defecto).
 desplegar_pozo() {
-  local red="$1" token="$2" fuente="$3" periodo="$4" pozo
+  local red="$1" token="$2" fuente="$3" periodo="$4" tope="${5:-0}" origen="${6:-pozo-admin}" pozo
   pozo=$(stellar contract deploy \
     --wasm target/wasm32v1-none/release/pozo.wasm \
-    --source pozo-admin --network "$red" \
+    --source "$origen" --network "$red" \
     -- \
     --token "$token" \
     --fuente "$fuente" \
     --periodo "$periodo" \
+    --tope "$tope" \
     --drand_pk "$DRAND_PK" \
     --drand_genesis "$DRAND_GENESIS" \
     --drand_periodo "$DRAND_PERIODO")
   stellar contract extend --id "$pozo" --durability persistent \
-    --ledgers-to-extend 518400 --source pozo-admin --network "$red" >/dev/null
+    --ledgers-to-extend 518400 --source "$origen" --network "$red" >/dev/null
   echo "$pozo"
 }

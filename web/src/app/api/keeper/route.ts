@@ -12,16 +12,16 @@
  * Es público a propósito: las dos acciones son permissionless y el contrato
  * deja pasar cada una una sola vez, así que un request de más no firma nada
  * que no haga falta. Lo único que expone es la cuenta que paga fees
- * (KEEPER_SECRET), y solo para esas dos llamadas.
+ * (KEEPER_SECRET), y solo para esas dos llamadas. La misma clave sirve en las
+ * dos redes: la cuenta tiene que existir (tener XLM) en cada una.
  *
- * Variables: NEXT_PUBLIC_RED, las direcciones de los pozos (o las de testnet
- * que trae `config.ts`) y KEEPER_SECRET. Sin la última solo mira, y lo dice
- * en la respuesta.
+ * Variables: las direcciones de los pozos (o las fijas de `config.ts`) y
+ * KEEPER_SECRET. Sin la última solo mira, y lo dice en la respuesta.
  */
 
 import { NextResponse } from "next/server";
 import { Keypair } from "@stellar/stellar-sdk";
-import { PASSPHRASE_RED, POZOS, RPC_URL, pozoConfigurado } from "@/lib/config";
+import { POZOS, pozoConfigurado } from "@/lib/config";
 import { info } from "@/lib/drand";
 import { paso, type Conexion, type Paso } from "@/lib/keeper";
 
@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic";
 /** Cerrar o sortear es simular, firmar, mandar y pollear: entra holgado. */
 export const maxDuration = 60;
 
-type Resultado = { pozo: string; clave: string } & (
+type Resultado = { pozo: string; clave: string; red: string } & (
   | { ok: true; paso: Paso }
   | { ok: false; error: string }
 );
@@ -62,25 +62,21 @@ async function unPaso(): Promise<Respuesta> {
   const firmante = secreto ? Keypair.fromSecret(secreto) : null;
   const d = await drand();
   const pozos: Resultado[] = [];
-  // En serie: el firmante es una sola cuenta y dos transacciones a la vez
-  // pelearían por el mismo número de secuencia.
+  // En serie: el firmante es una sola cuenta y dos transacciones a la vez en
+  // la misma red pelearían por el mismo número de secuencia.
   for (const p of POZOS) {
     const conexion: Conexion = {
-      rpcUrl: RPC_URL,
-      passphrase: PASSPHRASE_RED,
+      rpcUrl: p.rpcUrl,
+      passphrase: p.passphrase,
       pozo: p.id,
       drand: d,
       firmante,
     };
+    const base = { pozo: p.id, clave: p.clave, red: p.red };
     try {
-      pozos.push({ pozo: p.id, clave: p.clave, ok: true, paso: await paso(conexion) });
+      pozos.push({ ...base, ok: true, paso: await paso(conexion) });
     } catch (e) {
-      pozos.push({
-        pozo: p.id,
-        clave: p.clave,
-        ok: false,
-        error: e instanceof Error ? e.message : String(e),
-      });
+      pozos.push({ ...base, ok: false, error: e instanceof Error ? e.message : String(e) });
     }
   }
   return { ok: true, firma: firmante !== null, pozos };

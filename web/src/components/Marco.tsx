@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, type ReactNode } from "react";
-import { RED } from "@/lib/config";
+import { RED, type Red } from "@/lib/config";
 
 /**
  * El marco común de todas las páginas: logo flotando, header de vidrio con
@@ -14,10 +14,13 @@ export function Marco({
   docs = false,
   wallet,
   ancho = "max-w-5xl",
+  red = RED,
   children,
 }: {
   activo: "app" | "docs" | "ronda";
   docs?: boolean;
+  /** Qué red muestra el footer. Cada pozo tiene la suya. */
+  red?: Red;
   /** Lo que va a la derecha del header: el botón de wallet, si la página lo tiene. */
   wallet?: ReactNode;
   ancho?: string;
@@ -75,7 +78,7 @@ export function Marco({
             GitHub
           </a>
           <span>·</span>
-          <span className="pill pill-neutro">Stellar {RED}</span>
+          <span className="pill pill-neutro">Stellar {red}</span>
         </footer>
       </div>
     </div>
