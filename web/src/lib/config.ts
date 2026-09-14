@@ -50,7 +50,7 @@ export type Pozo = {
 const DIRECCIONES = {
   mainnet: process.env.NEXT_PUBLIC_POZO_MAINNET || "",
   // Pozo de prueba en testnet, rondas de 10 min, generando en Blend TestnetV2.
-  testnet: process.env.NEXT_PUBLIC_POZO || "CCAM3QUEKETEFA4TL27TD63ZD5LB646NJJF4OOWRQBP2RZ6O4Q7HWHRZ",
+  testnet: process.env.NEXT_PUBLIC_POZO || "CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2",
 };
 
 function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {

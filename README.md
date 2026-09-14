@@ -95,12 +95,13 @@ cd web && SOLO_MIRAR=1 npm run keeper
   firmas reales de drand quicknet: la verificación BLS on-chain está probada
   contra la red. El primer intento sacó a la luz un árbol de autorización mal
   armado que los tests no veían (ver `CLAUDE.md`)
-- ✅ **Pozo corriendo en testnet con Blend**:
-  `CCAM3QUEKETEFA4TL27TD63ZD5LB646NJJF4OOWRQBP2RZ6O4Q7HWHRZ`, a través del
-  adapter `CBWGO6FAY26JELTELES7ISYXEV6LWRUK3GZS2VZE2AV25SMPAWD27TMO` sobre el
+- ✅ **Pozo de prueba en testnet con Blend** (`/test`):
+  `CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2`, a través del
+  adapter `CCHLQA7SGZAEVGLAFUL4Y6DMBG7ZUZYSZZ7AGN44GNNJCCJ6VECV7ISA` sobre el
   pool TestnetV2 `CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF`.
-  Los depósitos atraviesan las tres autorizaciones anidadas y el pool paga
-  interés real: el premio crece sin `adelantar`. Es el pozo que apunta la app
+  Rondas de 10 min, con racha y referidos. Los depósitos atraviesan las tres
+  autorizaciones anidadas y el pool paga interés real. El anterior
+  (`CCAM3QUE…HWHRZ`, sin racha) sorteó decenas de rondas y sigue vivo
 - ✅ **App en https://zorritostellar.vercel.app**, con el estilo de Zorrito:
   pestañas por pozo (semanal y demo), premio con countdown, APY de Blend, tu
   posición, depositar y retirar, últimos ganadores leídos de los eventos, y
