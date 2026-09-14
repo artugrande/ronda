@@ -21,6 +21,21 @@
 //! `soroban-sdk` y dos majors no conviven en un contrato; el WASM, en cambio,
 //! corre en el host sin importar con qué se compiló.
 //!
+//! ## El polvo de Blend
+//!
+//! Blend redondea hacia abajo los b-tokens que entrega al depositar, así que
+//! una posición recién abierta vale hasta un stroop menos que lo depositado
+//! hasta que el interés lo repone. Si `retirar` le pidiera al pool el monto
+//! exacto y lo mandara derecho al destino, el pozo recibiría un stroop menos
+//! de lo que prometió pagar y el retiro fallaría. (Pasó en mainnet, con XLM
+//! al 0 %.)
+//!
+//! Por eso `retirar` le pide al pool **un stroop de más**, a nombre del
+//! adapter, y de su propio saldo paga el monto exacto. Lo que sobra queda en
+//! el adapter como fondo de polvo para el retiro siguiente. Si la posición no
+//! alcanza para el stroop extra, Blend entrega lo que hay y el fondo cubre la
+//! diferencia. Cualquiera puede sumarle al fondo con una transferencia común.
+//!
 //! ## Un dueño
 //!
 //! El adapter mantiene **una** posición, la de su dueño (el pozo). Se fija una
@@ -63,6 +78,9 @@ pub enum Error {
     YaTieneDueno = 2,
     NoEsElDueno = 3,
     MontoInvalido = 4,
+    /// El pool entregó menos que el monto y el fondo de polvo no cubre la
+    /// diferencia. Se arregla mandándole un poco del token al adapter.
+    PolvoInsuficiente = 5,
 }
 
 #[contracttype]
@@ -135,10 +153,8 @@ impl Contract {
         pool::Client::new(&env, &pool).submit(&yo, &yo, &yo, &pedidos(&env, SUPPLY, &token, monto));
     }
 
-    /// Saca `monto` del pool y lo manda a `a`. Solo el dueño.
-    ///
-    /// Blend redondea los b-tokens que quema hacia arriba, así que el que
-    /// retira recibe exactamente `monto`; el polvo lo absorbe la posición.
+    /// Saca `monto` del pool y le manda exactamente `monto` a `a`. Solo el
+    /// dueño. Ver "El polvo de Blend" arriba.
     pub fn retirar(env: Env, a: Address, monto: i128) {
         let dueno = dueno(&env);
         dueno.require_auth();
@@ -148,14 +164,21 @@ impl Contract {
         let (pool, token) = config(&env);
         let yo = env.current_contract_address();
 
-        // Para un Withdraw, `to` recibe los tokens directo del pool: no pasan
-        // por acá, así que no hay transfer anidado que autorizar.
+        // Un stroop de más, a nosotros. Si la posición no llega, Blend
+        // entrega lo que hay. `to` somos nosotros, así que no hay transfer
+        // anidado que autorizar: el pool nos paga con su propia autoridad.
         pool::Client::new(&env, &pool).submit(
             &yo,
             &yo,
-            &a,
-            &pedidos(&env, WITHDRAW, &token, monto),
+            &yo,
+            &pedidos(&env, WITHDRAW, &token, monto + 1),
         );
+
+        let tk = token::Client::new(&env, &token);
+        if tk.balance(&yo) < monto {
+            panic_with_error!(&env, Error::PolvoInsuficiente);
+        }
+        tk.transfer(&yo, &a, &monto);
     }
 
     /// Capital más el rendimiento devengado: b-tokens × b_rate.

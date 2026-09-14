@@ -36,8 +36,14 @@ export type Pozo = {
   red: Red;
   rpcUrl: string;
   passphrase: string;
-  /** El token del pozo (SAC de XLM nativo en las dos redes). */
+  /** Contract id del token del pozo (un SAC). */
   token: string;
+  /** Cómo se muestra el token: "USDC", "XLM". */
+  simbolo: string;
+  /** Código e issuer del activo, o `null` si es XLM nativo. Para la trustline. */
+  activo: { code: string; issuer: string } | null;
+  /** Horizon de la red, para leer balances y trustlines de la wallet. */
+  horizon: string;
   /** El pool de Blend v2 donde genera, para leer el APY. */
   blendPool: string;
   nombre: string;
@@ -55,20 +61,38 @@ export type Pozo = {
  * prueba a otro.
  */
 const DIRECCIONES = {
-  // Zorrito en mainnet: semanal, tope 5.000 XLM, generando en el pool Fixed de Blend.
-  mainnet: "CAR46DV7YNGNEOAI67SWY3WAQX2IGDWTHBRGDHJSW6EQQDR7XMGKUKQP",
+  // Zorrito en mainnet: USDC, semanal, tope 5.000, generando en el pool Fixed
+  // de Blend. (El primer deploy, CAR46DV7…UKQP, era de XLM y pagaba 0 %.)
+  mainnet: "",
   // Pozo de prueba en testnet, rondas de 10 min, generando en Blend TestnetV2.
   testnet: process.env.NEXT_PUBLIC_POZO_LOCAL || "CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2",
 };
 
-/** SAC de XLM nativo y pool de Blend v2 con reserva XLM, por red. */
-const TOKEN: Record<Red, string> = {
-  mainnet: "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
-  testnet: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+/**
+ * El token de cada red y el pool de Blend v2 donde genera. En mainnet, USDC
+ * en el pool Fixed: es lo que la gente pide prestado en Stellar (81 % de
+ * utilización, ~8 % anual para el que presta). XLM ahí paga 0 %. En testnet,
+ * XLM nativo, que no necesita trustline ni conseguir USDC de prueba.
+ */
+const TOKEN: Record<Red, { id: string; simbolo: string; activo: Pozo["activo"] }> = {
+  mainnet: {
+    id: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+    simbolo: "USDC",
+    activo: { code: "USDC", issuer: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" },
+  },
+  testnet: {
+    id: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    simbolo: "XLM",
+    activo: null,
+  },
 };
 export const BLEND_POOL: Record<Red, string> = {
   mainnet: "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD", // Fixed
   testnet: "CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF", // TestnetV2
+};
+export const HORIZON: Record<Red, string> = {
+  mainnet: "https://horizon.stellar.org",
+  testnet: "https://horizon-testnet.stellar.org",
 };
 
 function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
@@ -80,7 +104,10 @@ function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
     red,
     rpcUrl: RPC[red],
     passphrase: PASSPHRASE[red],
-    token: TOKEN[red],
+    token: TOKEN[red].id,
+    simbolo: TOKEN[red].simbolo,
+    activo: TOKEN[red].activo,
+    horizon: HORIZON[red],
     blendPool: BLEND_POOL[red],
     nombre: principal ? "Zorrito" : "Pozo de prueba",
     ritmo: principal

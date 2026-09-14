@@ -96,8 +96,9 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
   que el peso: la semana completa de "ahorré hoy" duplica las chances; cada
   referido suma el 10 % de su capital, con tope de la mitad del propio.
 
-- Mainnet: pozo semanal con tope de 5.000 XLM generando en el pool Fixed de
-  Blend v2. Pozo de prueba en testnet (`/test`) con rondas de 10 minutos.
+- Mainnet: pozo semanal de USDC con tope de 5.000 generando en la reserva de
+  USDC del pool Fixed de Blend v2 (~8 % anual; XLM ahí paga 0 %). Pozo de
+  prueba en testnet (`/test`) en XLM con rondas de 10 minutos.
 
 ### Pendiente antes de la submission
 
@@ -106,8 +107,6 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
 
 ### Fuera de alcance
 
-- Un pozo en USDC. Es el mismo código con otro token; XLM va primero porque
-  no necesita trustline.
 - Auditoría. Hasta entonces, el pozo de mainnet tiene un tope de capital fijo
   en el contrato.
 - Extender la renta de storage de cuentas inactivas desde el keeper.

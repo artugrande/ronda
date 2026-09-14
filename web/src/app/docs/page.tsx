@@ -38,9 +38,10 @@ export default function Docs() {
 
         <h2 id="como-funciona">Cómo funciona</h2>
         <div className="flex flex-col gap-3">
-          <Paso n={1} titulo="Depositás XLM">
+          <Paso n={1} titulo="Depositás USDC">
             Tu depósito va directo a Blend y empieza a generar al instante. No hay mínimo. Cada
-            XLM, y cada segundo que está adentro, suma chances.
+            dólar, y cada segundo que está adentro, suma chances. (El pozo de prueba en testnet
+            usa XLM.)
           </Paso>
           <Paso n={2} titulo="El pozo genera">
             El capital de todos se presta en Blend, el mercado de crédito de Stellar. El interés
@@ -72,7 +73,7 @@ export default function Docs() {
         <div className="formula">peso = Σ (depósito × segundos que estuvo en la ronda)</div>
         <div className="formula">P(ganar) = tu peso ÷ peso total del pozo</div>
         <p>
-          Ejemplo: dos personas con 100 XLM. Una entra el lunes, la otra el sábado. La primera
+          Ejemplo: dos personas con 100 USDC. Una entra el lunes, la otra el sábado. La primera
           tiene 6 veces más chances, porque su plata generó 6 veces más. Entrar a último momento
           con mucha plata casi no suma, y eso es a propósito: no hay forma de &quot;comprar&quot; el
           sorteo sobre la hora.
@@ -251,7 +252,7 @@ export default function Docs() {
             Blend
           </a>{" "}
           es el protocolo de préstamos de Stellar. El pozo deposita el capital de todos como{" "}
-          <strong>Supply</strong> en un pool de Blend v2 (Fixed en mainnet, TestnetV2 en testnet): una posición que presta y cobra interés
+          <strong>Supply</strong> en un pool de Blend v2 (la reserva de USDC del pool Fixed en mainnet; XLM en TestnetV2 en testnet): una posición que presta y cobra interés
           pero que no se usa como colateral, así que no tiene deuda y no puede ser liquidada.
         </p>
         <ul>
@@ -316,8 +317,8 @@ export default function Docs() {
                 <strong>Rendimiento</strong>
               </td>
               <td>
-                Blend v2, reserva XLM: pool Fixed en mainnet, TestnetV2 en testnet. Integrado
-                con <code>contractimport!</code> de los WASM oficiales.
+                Blend v2: la reserva de USDC del pool Fixed en mainnet, la de XLM de TestnetV2
+                en testnet. Integrado con <code>contractimport!</code> de los WASM oficiales.
               </td>
             </tr>
             <tr>
@@ -430,10 +431,16 @@ export default function Docs() {
           Nada malo. Se cierra cuando alguien la cierra, y hasta entonces el pozo sigue
           generando. El keeper y cada visita a la app la cierran solas.
         </Faq>
-        <Faq q="¿Por qué XLM y no un stablecoin?">
-          Porque no necesita trustline: cualquier cuenta de Stellar ya lo tiene, y eso saca un
-          paso del camino de entrada. El contrato es agnóstico: se construye con cualquier token
-          que Blend acepte como reserva, y un pozo en USDC es el mismo código con otro token.
+        <Faq q="¿Por qué USDC en mainnet y XLM en testnet?">
+          Porque el premio sale de lo que la gente pide prestado, y en Stellar la gente pide
+          prestado USDC: la reserva de USDC del pool Fixed está al 80 % de uso y paga ~8 %
+          anual al que presta; la de XLM está al 0,1 % y paga 0 %. En testnet no hay USDC fácil
+          de conseguir y XLM no necesita trustline, así que el pozo de prueba usa XLM. El
+          contrato es el mismo con cualquier token que Blend acepte.
+        </Faq>
+        <Faq q="¿Necesito algo en la wallet para entrar?">
+          USDC y un poco de XLM para las fees. Si tu wallet todavía no acepta USDC, la app te
+          ofrece agregarlo con un toque: es la trustline de Stellar, una sola vez.
         </Faq>
         <Faq q="¿Puedo tener referidos sin poner plata?">
           Podés, pero no te suman: el bono de referidos vale como mucho la mitad de tu propio

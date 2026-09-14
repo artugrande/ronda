@@ -85,7 +85,9 @@ fn retirar_devuelve_exactamente_lo_pedido() {
         CIEN * 9 + CIEN / 4,
         "recibe exacto lo que pidió, sin polvo de redondeo"
     );
-    assert_eq!(c.balance(&mesa.dueno), CIEN - CIEN / 4);
+    // Un stroop menos en la posición: es el que quedó en el adapter como
+    // fondo de polvo, y vuelve en el retiro siguiente.
+    assert_eq!(c.balance(&mesa.dueno), CIEN - CIEN / 4 - 1);
 
     c.retirar(&mesa.dueno, &(CIEN - CIEN / 4));
     assert_eq!(tk.balance(&mesa.dueno), CIEN * 10, "sale todo el capital");
@@ -104,6 +106,9 @@ fn retirar_manda_los_tokens_directo_al_destino() {
     let otro = Address::generate(&mesa.env);
     c.retirar(&otro, &CIEN);
     assert_eq!(tk.balance(&otro), CIEN);
+    // El stroop de más que se le pide al pool en cada retiro parcial queda
+    // como fondo de polvo. Acá el retiro fue total: el pool entregó lo que
+    // había y no sobró nada.
     assert_eq!(tk.balance(&mesa.adapter), 0);
 }
 
@@ -147,4 +152,50 @@ fn sin_dueno_no_se_deposita() {
     let alguien = Address::generate(&env);
     token::StellarAssetClient::new(&env, &token).mint(&alguien, &CIEN);
     ContractClient::new(&env, &adapter).depositar(&alguien, &CIEN);
+}
+
+#[test]
+fn un_retiro_parcial_deja_un_stroop_de_polvo_y_el_total_lo_usa() {
+    let mesa = montar();
+    let c = ContractClient::new(&mesa.env, &mesa.adapter);
+    let tk = token::Client::new(&mesa.env, &mesa.token);
+    c.depositar(&mesa.dueno, &CIEN);
+
+    c.retirar(&mesa.dueno, &(CIEN / 2));
+    assert_eq!(
+        tk.balance(&mesa.dueno),
+        CIEN * 9 + CIEN / 2,
+        "recibe exactamente lo pedido"
+    );
+    assert_eq!(
+        tk.balance(&mesa.adapter),
+        1,
+        "el stroop de más queda como fondo"
+    );
+    // La posición quedó un stroop abajo; el fondo lo compensa. `balance` mira
+    // solo la posición, así el fondo nunca se cuenta como premio y no se va
+    // en un sorteo.
+    assert_eq!(c.balance(&mesa.dueno), CIEN / 2 - 1);
+
+    // Retiro total: el pool entrega lo que queda (un stroop menos que lo
+    // pedido) y el fondo cubre la diferencia.
+    c.retirar(&mesa.dueno, &(CIEN / 2));
+    assert_eq!(tk.balance(&mesa.dueno), CIEN * 10, "sale todo el capital");
+    assert_eq!(c.balance(&mesa.dueno), 0);
+    assert_eq!(tk.balance(&mesa.adapter), 0, "el fondo se usó");
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn sin_fondo_de_polvo_un_retiro_corto_falla_claro() {
+    // Si el pool entrega menos que el monto y el adapter no tiene nada
+    // guardado, el error dice qué pasó en vez de un "balance is not
+    // sufficient" del token.
+    let mesa = montar();
+    let c = ContractClient::new(&mesa.env, &mesa.adapter);
+    c.depositar(&mesa.dueno, &CIEN);
+    c.retirar(&mesa.dueno, &(CIEN / 2));
+    // Un stroop de fondo, y la posición vale CIEN/2 − 1: pedir CIEN/2 + 1 da
+    // CIEN/2 − 1 del pool más el fondo = CIEN/2. Pedir CIEN/2 + 1 falla.
+    c.retirar(&mesa.dueno, &(CIEN / 2 + 1));
 }

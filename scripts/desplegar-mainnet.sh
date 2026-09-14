@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 #
 # Zorrito en mainnet: el adapter contra el pool Fixed de Blend v2 y el pozo
-# semanal, con tope de capital.
+# semanal de USDC, con tope de capital.
+#
+# USDC y no XLM porque es lo que la gente pide prestado en Stellar: la
+# reserva de USDC del pool Fixed está al 80 % de uso y paga ~8 % anual al que
+# presta; la de XLM está al 0,1 % y paga 0 %. (web/scripts/apy-blend.ts lo
+# muestra.)
 #
 #   scripts/desplegar-mainnet.sh
-#   TOPE_XLM=10000 scripts/desplegar-mainnet.sh     # otro tope
+#   TOPE=10000 scripts/desplegar-mainnet.sh          # otro tope, en USDC
+#   ACTIVO=native scripts/desplegar-mainnet.sh       # un pozo de XLM
 #   IDENTIDAD=mi-cuenta scripts/desplegar-mainnet.sh
 #
 # Necesita una identidad de la CLI con XLM en mainnet (unos 100 XLM alcanzan
@@ -29,8 +35,10 @@ RED=zorrito-mainnet
 MAINNET_RPC="${MAINNET_RPC:-https://mainnet.sorobanrpc.com}"
 PASSPHRASE_MAINNET="Public Global Stellar Network ; September 2015"
 PERIODO="${PERIODO:-604800}"
-TOPE_XLM="${TOPE_XLM:-5000}"
-TOPE=$((TOPE_XLM * 10000000))
+# USDC de Circle en Stellar. "native" para XLM.
+ACTIVO="${ACTIVO:-USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN}"
+TOPE_UNIDADES="${TOPE:-5000}"
+TOPE=$((TOPE_UNIDADES * 10000000))
 POOL="${POOL:-CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD}"   # Blend v2 "Fixed"
 IDENTIDAD="${IDENTIDAD:-zorrito-mainnet}"
 # 0,01 XLM por transacción: entra en el primer ledger aunque haya tráfico.
@@ -99,11 +107,11 @@ ls -l target/wasm32v1-none/release/pozo.wasm target/wasm32v1-none/release/blend_
 paso "Clave pública de drand quicknet (descomprimida)"
 leer_drand
 
-paso "SAC de XLM nativo"
-TOKEN=$(stellar contract id asset --asset native --network "$RED")
+paso "SAC del activo ($ACTIVO)"
+TOKEN=$(stellar contract id asset --asset "$ACTIVO" --network "$RED")
 echo "  $TOKEN"
 
-paso "El pool de Blend tiene XLM como reserva"
+paso "El pool de Blend tiene el activo como reserva"
 echo "  pool $POOL"
 if ! RESERVA=$(stellar contract invoke --id "$POOL" --source "$IDENTIDAD" --network "$RED" -- \
   get_reserve --asset "$TOKEN" 2>&1); then
@@ -136,7 +144,7 @@ stellar contract extend --inclusion-fee "$STELLAR_FEE" --id "$ADAPTER" --durabil
   --ledgers-to-extend 518400 --source "$IDENTIDAD" --network "$RED" >/dev/null
 echo "  $ADAPTER"
 
-paso "2. Deploy del pozo semanal, tope $TOPE_XLM XLM"
+paso "2. Deploy del pozo semanal, tope $TOPE_UNIDADES"
 POZO=$(desplegar_pozo "$RED" "$TOKEN" "$ADAPTER" "$PERIODO" "$TOPE" "$IDENTIDAD")
 echo "  $POZO"
 
@@ -158,13 +166,17 @@ Zorrito está en mainnet.
 POZO=$POZO
 ADAPTER=$ADAPTER
 POOL=$POOL
-TOPE=$TOPE_XLM XLM · rondas de ${PERIODO}s
+ACTIVO=$ACTIVO
+TOPE=$TOPE_UNIDADES · rondas de ${PERIODO}s
 
 Falta:
 
 1. Poner $POZO como dirección de mainnet en web/src/lib/config.ts y pushear.
 2. Fondear al keeper en mainnet con ~5 XLM (la misma clave que en testnet):
    $KEEPER
-3. Entrar a la app, conectar con una wallet en mainnet y depositar 1 XLM.
+3. Mandarle 1 USDC al adapter ($ADAPTER) como fondo de polvo: Blend
+   redondea un stroop al depositar y el adapter lo cubre de ahí.
+4. Entrar a la app, conectar con una wallet en mainnet y depositar 1 USDC.
+   (La app ofrece agregar la trustline de USDC si la wallet no la tiene.)
 ─────────────────────────────────────────────────────────────────
 FIN
