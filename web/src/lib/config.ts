@@ -36,6 +36,10 @@ export type Pozo = {
   red: Red;
   rpcUrl: string;
   passphrase: string;
+  /** El token del pozo (SAC de XLM nativo en las dos redes). */
+  token: string;
+  /** El pool de Blend v2 donde genera, para leer el APY. */
+  blendPool: string;
   nombre: string;
   /** Cómo se explica la duración de la ronda en la pantalla. */
   ritmo: string;
@@ -57,6 +61,16 @@ const DIRECCIONES = {
   testnet: process.env.NEXT_PUBLIC_POZO_LOCAL || "CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2",
 };
 
+/** SAC de XLM nativo y pool de Blend v2 con reserva XLM, por red. */
+const TOKEN: Record<Red, string> = {
+  mainnet: "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+  testnet: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+};
+export const BLEND_POOL: Record<Red, string> = {
+  mainnet: "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD", // Fixed
+  testnet: "CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF", // TestnetV2
+};
+
 function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
   if (!id) return null;
   const principal = clave === "principal";
@@ -66,6 +80,8 @@ function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
     red,
     rpcUrl: RPC[red],
     passphrase: PASSPHRASE[red],
+    token: TOKEN[red],
+    blendPool: BLEND_POOL[red],
     nombre: principal ? "Zorrito" : "Pozo de prueba",
     ritmo: principal
       ? "Se sortea una vez por semana"

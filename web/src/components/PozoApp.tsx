@@ -23,6 +23,7 @@ import {
 } from "@/lib/pozo";
 import { aStroops, aTexto } from "@/lib/montos";
 import { conectar, desconectar, direccionActual, firmar } from "@/lib/wallet";
+import { porcentaje, tasaBlend, type TasaBlend } from "@/lib/blend";
 import { Marco } from "@/components/Marco";
 import { BotonWallet } from "@/components/Wallet";
 import { Boton, Error as Aviso, Etiqueta, Panel, corta, explorer } from "@/components/ui";
@@ -96,6 +97,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
   const [vista, setVista] = useState<Vista | null>(null);
   const [revela, setRevela] = useState<number | null>(null);
   const [lista, setLista] = useState<Ganador[] | null>(null);
+  const [tasa, setTasa] = useState<TasaBlend | null>(null);
   const [cuenta, setCuenta] = useState<Cuenta | null>(null);
   const [miSaldo, setMiSaldo] = useState<bigint>(0n);
   const [misChances, setMisChances] = useState<number>(0);
@@ -154,6 +156,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
       await refrescar(direccion);
     })();
     ganadores(pozo).then(setLista).catch(() => setLista([]));
+    tasaBlend(pozo).then(setTasa).catch(() => setTasa(null));
     const t = setInterval(() => refrescar(direccion), REFRESCO_S * 1000);
     return () => clearInterval(t);
   }, [refrescar, pozo]);
@@ -248,7 +251,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
         <div className="grid gap-4 md:grid-cols-2 md:items-start">
           <div className="flex flex-col gap-4">
             <Premio vista={vista} ahora={ahora} revela={revela} />
-            <Cifras vista={vista} />
+            <Cifras vista={vista} tasa={tasa} />
             {yo && (
               <Racha
                 cuenta={cuenta}
@@ -386,7 +389,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
             </Panel>
 
             {yo && cuenta && <Referidos yo={yo} cuenta={cuenta} ruta={pozo.ruta} />}
-            <Blend vista={vista} />
+            <Blend tasa={tasa} />
             <ComoFunciona />
           </div>
         </div>
@@ -450,8 +453,17 @@ function Premio({ vista, ahora, revela }: { vista: Vista; ahora: number; revela:
   );
 }
 
-function Cifras({ vista }: { vista: Vista }) {
-  const apy = apyTexto(vista.apyBps);
+/**
+ * El APY que se muestra: el que Blend paga ahora por el token, leído del
+ * pool. Si no se pudo leer, el que midió el pozo con su propio rendimiento.
+ */
+function apyMostrado(vista: Vista, tasa: TasaBlend | null): string | null {
+  if (tasa) return porcentaje(tasa.apy);
+  return apyTexto(vista.apyBps);
+}
+
+function Cifras({ vista, tasa }: { vista: Vista; tasa: TasaBlend | null }) {
+  const apy = apyMostrado(vista, tasa);
   return (
     <Panel titulo="📊 El pozo">
       <div className="grid grid-cols-3 gap-2">
@@ -474,7 +486,12 @@ function Cifras({ vista }: { vista: Vista }) {
             {apy ?? "—"}
             {apy && <span className="pulso ml-1 inline-block align-middle" />}
           </div>
-          {!apy && <span className="stat-secondary">aparece con el primer rendimiento</span>}
+          {apy && tasa && (
+            <span className="stat-secondary">
+              pool al {(tasa.utilizacion * 100).toFixed(0)} % de uso
+            </span>
+          )}
+          {!apy && <span className="stat-secondary">leyendo el pool…</span>}
         </div>
       </div>
     </Panel>
@@ -589,8 +606,8 @@ function Referidos({ yo, cuenta, ruta }: { yo: string; cuenta: Cuenta; ruta: str
   );
 }
 
-function Blend({ vista }: { vista: Vista }) {
-  const apy = apyTexto(vista.apyBps);
+function Blend({ tasa }: { tasa: TasaBlend | null }) {
+  const apy = tasa ? porcentaje(tasa.apy) : null;
   return (
     <Panel titulo="🌊 De dónde sale el premio">
       <div className="aviso aviso-verde flex items-center justify-between gap-3">
