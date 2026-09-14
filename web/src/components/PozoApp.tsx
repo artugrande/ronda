@@ -427,7 +427,9 @@ function Premio({ vista, ahora, revela }: { vista: Vista; ahora: number; revela:
   return (
     <Panel titulo={<>🏆 {vista.sorteoPendiente ? "Premio de la ronda" : "Premio en juego"}</>}>
       <div className="flex items-baseline gap-2">
-        <span className="premio-grande cifra">{aTexto(vista.premio, 4)}</span>
+        <span className="premio-grande cifra">
+          {vista.premio < 100_000n ? aTexto(vista.premio, 7) : aTexto(vista.premio, 4)}
+        </span>
         <span className="text-sm font-bold text-tenue">XLM</span>
       </div>
       <div className="mb-3 mt-2">
@@ -440,8 +442,9 @@ function Premio({ vista, ahora, revela }: { vista: Vista; ahora: number; revela:
       <p className="mt-3 text-xs text-tenue">{nota}</p>
       <p className="mt-2 text-sm text-tenue">
         Es el rendimiento que generó el pozo entero en{" "}
-        <span className="font-bold text-foreground">Blend</span>. Uno se lo lleva; los demás
-        siguen con exactamente lo que pusieron.
+        <span className="font-bold text-foreground">Blend</span>, no el capital. Uno se lo
+        lleva; los demás siguen con exactamente lo que pusieron.
+        {vista.premio === 0n && vista.principal > 0n && " Recién arranca: crece con las horas."}
       </p>
     </Panel>
   );
@@ -471,7 +474,7 @@ function Cifras({ vista }: { vista: Vista }) {
             {apy ?? "—"}
             {apy && <span className="pulso ml-1 inline-block align-middle" />}
           </div>
-          {!apy && <span className="stat-secondary">midiendo…</span>}
+          {!apy && <span className="stat-secondary">aparece con el primer rendimiento</span>}
         </div>
       </div>
     </Panel>
