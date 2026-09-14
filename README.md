@@ -87,12 +87,19 @@ cd web && SOLO_MIRAR=1 npm run keeper
   cuentas. 37 tests, footprint y costo medidos
 - ✅ Keeper permissionless del pozo (`web/scripts/keeper.ts`) y helper que
   descomprime la clave de drand para el deploy
-- ✅ **Pozo corriendo en testnet**: `CB5X4AGGESZWVWLUFMJY7CQJMEA4WR4W7TOSE5V4QM3F5O6IMLBU22FY`
-  (fuente mock `CDJFOATXNVBZO73S3IMXVD4XYR6AEBVCTDUDWMLMX4ZS2WTPAHEAPOFW`, rondas
-  de 10 min). Más de 20 rondas seguidas cerradas y sorteadas por el keeper con
+- ✅ **Pozo corriendo en testnet con el mock**:
+  `CB5X4AGGESZWVWLUFMJY7CQJMEA4WR4W7TOSE5V4QM3F5O6IMLBU22FY` (fuente mock
+  `CDJFOATXNVBZO73S3IMXVD4XYR6AEBVCTDUDWMLMX4ZS2WTPAHEAPOFW`, rondas de
+  10 min). Más de 20 rondas seguidas cerradas y sorteadas por el keeper con
   firmas reales de drand quicknet: la verificación BLS on-chain está probada
   contra la red. El primer intento sacó a la luz un árbol de autorización mal
   armado que los tests no veían (ver `CLAUDE.md`)
+- ✅ **Pozo corriendo en testnet con Blend**:
+  `CCAM3QUEKETEFA4TL27TD63ZD5LB646NJJF4OOWRQBP2RZ6O4Q7HWHRZ`, a través del
+  adapter `CBWGO6FAY26JELTELES7ISYXEV6LWRUK3GZS2VZE2AV25SMPAWD27TMO` sobre el
+  pool TestnetV2 `CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF`.
+  Los depósitos atraviesan las tres autorizaciones anidadas y el pool paga
+  interés real: el premio crece sin `adelantar`. Es el pozo que apunta la app
 - ✅ Frontend del pozo en `web/` (`/`): premio en juego, countdown, participantes,
   total, APY, tu capital y tu probabilidad, depositar y retirar. La ronda
   rotativa quedó en `/ronda`
