@@ -690,7 +690,22 @@ function duracion(segundos: number): string {
   return `${s}s`;
 }
 
+/**
+ * Los errores del host son para quien programa. Los que un usuario puede
+ * provocar se traducen; el resto se muestra tal cual, que es lo que sirve
+ * para reportarlo.
+ */
 function mensaje(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  return String(e);
+  const crudo = e instanceof Error ? e.message : String(e);
+  if (crudo.includes("balance is not within the allowed range")) {
+    return "No te alcanza el XLM de la wallet. Acordate de que Stellar reserva 1 XLM que no se puede gastar.";
+  }
+  if (crudo.includes("Error(Contract, #13)")) return "El pozo llegó a su tope de capital. Probá con menos.";
+  if (crudo.includes("Error(Contract, #14)")) return "Hoy ya marcaste la racha. Mañana suma más.";
+  if (crudo.includes("Error(Contract, #15)")) return "Para marcar la racha tenés que tener capital adentro.";
+  if (crudo.includes("Error(Contract, #16)")) return "Ese link de invitación no es válido.";
+  if (crudo.includes("Error(Contract, #3)")) return "Estás intentando retirar más de lo que tenés en el pozo.";
+  if (crudo.includes("no respondió")) return "La wallet no respondió. Fijate que esté abierta y en la red correcta.";
+  if (crudo.includes("User declined") || crudo.includes("rejected")) return "Cancelaste la firma en la wallet.";
+  return crudo;
 }
