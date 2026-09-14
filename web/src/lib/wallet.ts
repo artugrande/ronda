@@ -61,15 +61,37 @@ async function kit(red: Red = redActual): Promise<Kit> {
   return StellarWalletsKit;
 }
 
+/**
+ * Recordar que el usuario conectó en esta app. Sin esto, `getAddress` de
+ * Freighter devuelve la dirección aunque el sitio nunca haya pedido permiso,
+ * y después cada firma sale con el aviso "not currently connected".
+ */
+const MARCA = "zorrito:wallet";
+const marcado = () => {
+  try {
+    return localStorage.getItem(MARCA) === "1";
+  } catch {
+    return false;
+  }
+};
+const marcar = (si: boolean) => {
+  try {
+    if (si) localStorage.setItem(MARCA, "1");
+    else localStorage.removeItem(MARCA);
+  } catch {}
+};
+
 /** Abre el modal de wallets y devuelve la dirección conectada. */
 export async function conectar(red: Red = RED): Promise<string> {
   const k = await kit(red);
   const { address } = await conLimite(k.authModal(), 120_000, "conectar");
+  marcar(true);
   return address;
 }
 
-/** La dirección ya conectada, o `null` si no hay ninguna. */
+/** La dirección ya conectada en esta app, o `null` si no hay ninguna. */
 export async function direccionActual(red: Red = RED): Promise<string | null> {
+  if (!marcado()) return null;
   try {
     const k = await kit(red);
     const { address } = await conLimite(k.getAddress(), 10_000, "getAddress");
@@ -80,8 +102,11 @@ export async function direccionActual(red: Red = RED): Promise<string | null> {
 }
 
 export async function desconectar(): Promise<void> {
-  const k = await kit();
-  await k.disconnect();
+  marcar(false);
+  try {
+    const k = await kit();
+    await k.disconnect();
+  } catch {}
 }
 
 /**

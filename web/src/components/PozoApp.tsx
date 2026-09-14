@@ -22,7 +22,7 @@ import {
   type Vista,
 } from "@/lib/pozo";
 import { aStroops, aTexto } from "@/lib/montos";
-import { conectar, direccionActual, firmar } from "@/lib/wallet";
+import { conectar, desconectar, direccionActual, firmar } from "@/lib/wallet";
 import { Marco } from "@/components/Marco";
 import { BotonWallet } from "@/components/Wallet";
 import { Boton, Error as Aviso, Etiqueta, Panel, corta, explorer } from "@/components/ui";
@@ -202,7 +202,22 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
     <Marco
       activo={activo === "test" ? "app" : "app"}
       red={pozo?.red}
-      wallet={<BotonWallet yo={yo} cargando={accion === "conectar"} onConectar={conectarWallet} />}
+      wallet={
+        <BotonWallet
+          yo={yo}
+          cargando={accion === "conectar"}
+          onConectar={conectarWallet}
+          onDesconectar={() =>
+            correr("conectar", async () => {
+              await desconectar();
+              setYo(null);
+              setCuenta(null);
+              setMiSaldo(0n);
+              setMisChances(0);
+            })
+          }
+        />
+      }
     >
       {!pozo && <SinDeploy />}
 
