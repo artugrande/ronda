@@ -2,11 +2,14 @@
  * Cliente del contrato `pozo`.
  *
  * Lecturas por `queryContract`; escrituras por el ciclo completo (simular,
- * ensamblar, firmar, mandar, pollear) que ya implementa `contrato.ts`.
+ * ensamblar, firmar, mandar, pollear) que ya implementa `contrato.ts`. Todas
+ * reciben el contract id: la app muestra más de un pozo.
  */
 
-import { PASSPHRASE_RED, POZO } from "./config";
+import { Address, nativeToScVal, rpc, scValToNative } from "@stellar/stellar-sdk";
+import { PASSPHRASE_RED } from "./config";
 import { addr, i128, invocarEn, servidor, type Firmante } from "./contrato";
+import { momentoDe } from "./drand";
 
 // ---------------------------------------------------------------------------
 // Tipos, espejo de `Vista` en el contrato
@@ -60,9 +63,9 @@ function leerVista(c: VistaCruda): Vista {
 // Lecturas
 // ---------------------------------------------------------------------------
 
-export async function estado(): Promise<Vista> {
+export async function estado(pozo: string): Promise<Vista> {
   const { result } = await servidor.queryContract<VistaCruda>(
-    POZO,
+    pozo,
     "estado",
     {},
     PASSPHRASE_RED,
@@ -71,9 +74,9 @@ export async function estado(): Promise<Vista> {
 }
 
 /** Capital de una cuenta en el pozo. */
-export async function saldo(usuario: string): Promise<bigint> {
+export async function saldo(pozo: string, usuario: string): Promise<bigint> {
   const { result } = await servidor.queryContract<bigint>(
-    POZO,
+    pozo,
     "saldo",
     { usuario },
     PASSPHRASE_RED,
@@ -82,9 +85,9 @@ export async function saldo(usuario: string): Promise<bigint> {
 }
 
 /** Chances de una cuenta en la ronda en curso, en puntos básicos. */
-export async function chancesBps(usuario: string): Promise<number> {
+export async function chancesBps(pozo: string, usuario: string): Promise<number> {
   const { result } = await servidor.queryContract<bigint>(
-    POZO,
+    pozo,
     "chances_bps",
     { usuario },
     PASSPHRASE_RED,
@@ -92,15 +95,98 @@ export async function chancesBps(usuario: string): Promise<number> {
   return Number(result);
 }
 
+type ConfigCruda = { drand_genesis: bigint; drand_periodo: bigint; periodo: bigint };
+
+const configs = new Map<string, Promise<ConfigCruda>>();
+
+/** Lo que no cambia en la vida del pozo. Se pide una vez por pestaña. */
+export function config(pozo: string): Promise<ConfigCruda> {
+  let c = configs.get(pozo);
+  if (!c) {
+    c = servidor
+      .queryContract<ConfigCruda>(pozo, "config", {}, PASSPHRASE_RED)
+      .then((r) => r.result);
+    c.catch(() => configs.delete(pozo));
+    configs.set(pozo, c);
+  }
+  return c;
+}
+
+/**
+ * Cuándo se conoce el ganador de un sorteo pendiente (Unix, segundos): el
+ * momento en que drand publica la ronda que lo decide. Después de eso solo
+ * falta que alguien, el keeper o una visita, la traiga.
+ */
+export async function ganadorSeConoceEn(pozo: string, v: Vista): Promise<number | null> {
+  if (!v.sorteoPendiente || v.rondaDrand == null) return null;
+  const c = await config(pozo);
+  return momentoDe(Number(c.drand_genesis), Number(c.drand_periodo), Number(v.rondaDrand));
+}
+
+// ---------------------------------------------------------------------------
+// Ganadores: los eventos `sorteo_ejecutado` que todavía guarda el RPC
+// ---------------------------------------------------------------------------
+
+export type Ganador = {
+  ronda: number;
+  ganador: string;
+  premio: bigint;
+  /** Hash de la transacción del sorteo, para enlazar al explorer. */
+  tx: string;
+  ledger: number;
+};
+
+/**
+ * Los últimos sorteos, del más nuevo al más viejo. El RPC de testnet guarda
+ * unos 7 días de eventos; un historial más largo necesita un indexer.
+ */
+export async function ganadores(pozo: string, maximo = 10): Promise<Ganador[]> {
+  const ultimo = await servidor.getLatestLedger();
+  // ~7 días a 5s por ledger, que es lo que retiene el RPC público. Si pide
+  // más atrás de lo que tiene, el RPC contesta con error: se acota.
+  const desde = Math.max(1, ultimo.sequence - 120_000);
+  const topico = nativeToScVal("sorteo_ejecutado", { type: "symbol" }).toXDR("base64");
+  const salida: Ganador[] = [];
+  let cursor: string | null = null;
+  for (let pagina = 0; pagina < 20; pagina++) {
+    const filtros: rpc.Api.EventFilter[] = [
+      { type: "contract", contractIds: [pozo], topics: [[topico, "*", "*"]] },
+    ];
+    const r: rpc.Api.GetEventsResponse = await servidor.getEvents(
+      cursor === null
+        ? { startLedger: desde, filters: filtros, limit: 200 }
+        : { cursor, filters: filtros, limit: 200 },
+    );
+    for (const e of r.events) salida.push(leerGanador(e));
+    if (r.events.length < 200) break;
+    cursor = r.cursor;
+  }
+  return salida.sort((a, b) => b.ronda - a.ronda).slice(0, maximo);
+}
+
+function leerGanador(e: rpc.Api.EventResponse): Ganador {
+  // topics: ["sorteo_ejecutado", ronda: u32, ganador: Address]; data: map.
+  const ronda = Number(scValToNative(e.topic[1]));
+  const ganador = Address.fromScVal(e.topic[2]).toString();
+  const datos = scValToNative(e.value) as { premio: bigint };
+  return {
+    ronda,
+    ganador,
+    premio: BigInt(datos.premio),
+    tx: e.txHash,
+    ledger: e.ledger,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Escrituras
 // ---------------------------------------------------------------------------
 
-export const depositar = (usuario: string, monto: bigint, f: Firmante) =>
-  invocarEn(POZO, usuario, "depositar", [addr(usuario), i128(monto)], f);
+export const depositar = (pozo: string, usuario: string, monto: bigint, f: Firmante) =>
+  invocarEn(pozo, usuario, "depositar", [addr(usuario), i128(monto)], f);
 
-export const retirar = (usuario: string, monto: bigint, f: Firmante) =>
-  invocarEn(POZO, usuario, "retirar", [addr(usuario), i128(monto)], f);
+export const retirar = (pozo: string, usuario: string, monto: bigint, f: Firmante) =>
+  invocarEn(pozo, usuario, "retirar", [addr(usuario), i128(monto)], f);
 
 /** "12,34 %" a partir de puntos básicos. */
 export function apyTexto(bps: bigint | null): string | null {

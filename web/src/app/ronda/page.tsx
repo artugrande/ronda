@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CONTRATO, RED, RONDA_ID, configurado } from "@/lib/config";
+import { CONTRATO, RONDA_ID, configurado } from "@/lib/config";
 import {
   acreditar,
   ejecutarTurno,
@@ -15,6 +15,9 @@ import { aTexto } from "@/lib/montos";
 import { conectar, direccionActual, firmar } from "@/lib/wallet";
 import { CrossChain } from "@/components/CrossChain";
 import { Boton, Error as Aviso, Etiqueta, Panel, corta } from "@/components/ui";
+import { Marco } from "@/components/Marco";
+import { BotonWallet } from "@/components/Wallet";
+import Link from "next/link";
 
 type Accion = null | "aportar" | "intencion" | "turno" | "conectar";
 
@@ -88,31 +91,30 @@ export default function Home() {
     BigInt(ahora) >= vista.proximoTurnoAt;
 
   return (
-    <main className="mx-auto w-full max-w-lg flex-1 px-4 py-6 sm:py-10">
-      <header className="mb-6 flex items-baseline justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Ronda</h1>
-        <div className="flex items-center gap-2">
-          <Etiqueta tono={RED === "mainnet" ? "alerta" : "neutro"}>
-            {RED}
-          </Etiqueta>
-          {yo ? (
-            <Etiqueta tono="ok">{corta(yo)}</Etiqueta>
-          ) : (
-            <button
-              onClick={() =>
-                correr("conectar", async () => {
-                  const direccion = await conectar();
-                  setYo(direccion);
-                  await refrescar(direccion);
-                })
-              }
-              className="text-sm font-medium text-acento underline underline-offset-4"
-            >
-              {accion === "conectar" ? "…" : "Conectar"}
-            </button>
-          )}
-        </div>
-      </header>
+    <Marco
+      activo="ronda"
+      ancho="max-w-lg"
+      wallet={
+        <BotonWallet
+          yo={yo}
+          cargando={accion === "conectar"}
+          onConectar={() =>
+            correr("conectar", async () => {
+              const direccion = await conectar();
+              setYo(direccion);
+              await refrescar(direccion);
+            })
+          }
+        />
+      }
+    >
+      <div>
+        <h1 className="logo-texto">Ronda</h1>
+        <p className="header-tagline">
+          La vaquita de siempre, pero el contrato guarda la plata. El primer producto; el pozo
+          está en la <Link href="/">app</Link>.
+        </p>
+      </div>
 
       {!configurado && <SinDeploy />}
 
@@ -213,7 +215,7 @@ export default function Home() {
           <Miembros vista={vista} yo={yo} />
         </div>
       )}
-    </main>
+    </Marco>
   );
 }
 

@@ -4,18 +4,16 @@ export function Panel({
   titulo,
   children,
   pie,
+  className = "",
 }: {
-  titulo?: string;
+  titulo?: ReactNode;
   children: ReactNode;
   pie?: ReactNode;
+  className?: string;
 }) {
   return (
-    <section className="rounded-2xl border border-borde bg-panel p-4 sm:p-5">
-      {titulo && (
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-tenue">
-          {titulo}
-        </h2>
-      )}
+    <section className={`card ${className}`}>
+      {titulo && <h2 className="card-title">{titulo}</h2>}
       {children}
       {pie && <div className="mt-3 text-sm text-tenue">{pie}</div>}
     </section>
@@ -33,20 +31,15 @@ export function Boton({
   onClick: () => void;
   disabled?: boolean;
   cargando?: boolean;
-  variante?: "principal" | "secundario";
+  variante?: "principal" | "secundario" | "peligro";
 }) {
-  const base =
-    "w-full rounded-xl px-4 py-3.5 text-base font-medium transition disabled:opacity-40 disabled:cursor-not-allowed";
-  const estilo =
-    variante === "principal"
-      ? "bg-acento text-white hover:brightness-110"
-      : "border border-borde bg-transparent hover:bg-borde/40";
+  const estilo = {
+    principal: "btn-naranja",
+    secundario: "btn-negro",
+    peligro: "btn-rojo",
+  }[variante];
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled || cargando}
-      className={`${base} ${estilo}`}
-    >
+    <button onClick={onClick} disabled={disabled || cargando} className={`btn ${estilo}`}>
       {cargando ? "…" : children}
     </button>
   );
@@ -59,29 +52,20 @@ export function Etiqueta({
   children: ReactNode;
   tono?: "neutro" | "ok" | "alerta";
 }) {
-  const tonos = {
-    neutro: "text-tenue border-borde",
-    ok: "text-ok border-ok/40",
-    alerta: "text-alerta border-alerta/40",
-  } as const;
-  return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-xs font-medium ${tonos[tono]}`}
-    >
-      {children}
-    </span>
-  );
+  return <span className={`pill pill-${tono}`}>{children}</span>;
 }
 
 export function Error({ children }: { children: ReactNode }) {
-  return (
-    <p className="rounded-xl border border-alerta/40 bg-alerta/10 px-4 py-3 text-sm text-alerta">
-      {children}
-    </p>
-  );
+  return <p className="aviso aviso-rojo">{children}</p>;
 }
 
 /** Acorta una dirección para que entre en pantalla sin perder los extremos. */
 export function corta(dir: string, n = 4): string {
   return dir.length <= n * 2 + 3 ? dir : `${dir.slice(0, n)}…${dir.slice(-n)}`;
+}
+
+/** Link al explorer de la red para una cuenta, contrato o transacción. */
+export function explorer(red: string, tipo: "account" | "contract" | "tx", id: string): string {
+  const base = red === "mainnet" ? "https://stellar.expert/explorer/public" : "https://stellar.expert/explorer/testnet";
+  return `${base}/${tipo}/${id}`;
 }
