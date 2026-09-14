@@ -75,8 +75,6 @@ export function Marco({
             GitHub
           </a>
           <span>·</span>
-          <Link href="/ronda">Ronda</Link>
-          <span>·</span>
           <span className="pill pill-neutro">Stellar {RED}</span>
         </footer>
       </div>
