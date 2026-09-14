@@ -108,6 +108,7 @@ desplegar_pozo() {
     --drand_pk "$DRAND_PK" \
     --drand_genesis "$DRAND_GENESIS" \
     --drand_periodo "$DRAND_PERIODO")
+  [[ -n "$pozo" ]] || { echo "el deploy del pozo no devolvió dirección" >&2; return 1; }
   stellar contract extend --fee "$STELLAR_FEE" --id "$pozo" --durability persistent \
     --ledgers-to-extend 518400 --source "$origen" --network "$red" >/dev/null
   echo "$pozo"

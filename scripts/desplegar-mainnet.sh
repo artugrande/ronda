@@ -61,6 +61,18 @@ MSG
   exit 1
 fi
 echo "  $ADMIN"
+SALDO=$(curl -sS --max-time 20 "https://horizon.stellar.org/accounts/$ADMIN" 2>/dev/null \
+  | grep -B3 '"asset_type": "native"' | sed -n 's/.*"balance": "\([0-9.]*\)".*/\1/p' | head -n 1)
+MINIMO_XLM=25
+if [[ -z "$SALDO" ]] || (( $(printf '%.0f' "$SALDO") < MINIMO_XLM )); then
+  cat >&2 <<MSG
+La cuenta tiene ${SALDO:-0} XLM y el deploy completo necesita unos $MINIMO_XLM:
+subir dos WASM (el pozo pesa 30 KB de storage), desplegarlos, pagar la renta
+del primer mes y las fees. Mandale XLM a $ADMIN y volvé a correr.
+MSG
+  exit 1
+fi
+echo "  saldo: $SALDO XLM"
 
 paso "RPC de mainnet"
 SALUD=$(curl -sS --max-time 20 "$MAINNET_RPC" -X POST -H 'content-type: application/json' \
@@ -106,6 +118,11 @@ fi
 echo "  b_rate $(sed -n 's/.*"b_rate":"\([0-9]*\)".*/\1/p' <<<"$RESERVA" | head -n 1)"
 
 paso "1. Deploy del adapter"
+# Si un intento anterior ya dejó un adapter, se reusa: ADAPTER=C... en el
+# entorno evita pagar otro.
+if [[ -n "${ADAPTER:-}" ]]; then
+  echo "  reusando $ADAPTER"
+else
 ADAPTER=$(stellar contract deploy --fee "$STELLAR_FEE" \
   --wasm target/wasm32v1-none/release/blend_adapter.wasm \
   --source "$IDENTIDAD" --network "$RED" \
@@ -113,6 +130,8 @@ ADAPTER=$(stellar contract deploy --fee "$STELLAR_FEE" \
   --admin "$ADMIN" \
   --pool "$POOL" \
   --token "$TOKEN")
+[[ -n "$ADAPTER" ]] || { echo "el deploy del adapter no devolvió dirección" >&2; exit 1; }
+fi
 stellar contract extend --fee "$STELLAR_FEE" --id "$ADAPTER" --durability persistent \
   --ledgers-to-extend 518400 --source "$IDENTIDAD" --network "$RED" >/dev/null
 echo "  $ADAPTER"
