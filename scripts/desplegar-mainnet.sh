@@ -22,7 +22,12 @@
 #
 set -euo pipefail
 
-RED=mainnet
+# La CLI trae "mainnet" sin RPC ("Bring Your Own"): se registra una red propia
+# con un RPC público. Si este se cae o limita, MAINNET_RPC=... con otro de
+# https://developers.stellar.org/docs/data/rpc/rpc-providers
+RED=zorrito-mainnet
+MAINNET_RPC="${MAINNET_RPC:-https://mainnet.sorobanrpc.com}"
+PASSPHRASE_MAINNET="Public Global Stellar Network ; September 2015"
 PERIODO="${PERIODO:-604800}"
 TOPE_XLM="${TOPE_XLM:-5000}"
 TOPE=$((TOPE_XLM * 10000000))
@@ -48,18 +53,29 @@ No existe la identidad "$IDENTIDAD". Creala con una cuenta que tenga XLM en main
 
 o generá una nueva y fondeala:
 
-  stellar keys generate $IDENTIDAD --network mainnet
+  stellar keys generate $IDENTIDAD
   stellar keys address $IDENTIDAD      # mandale ~100 XLM
 MSG
   exit 1
 fi
 echo "  $ADMIN"
-if ! stellar network ls 2>/dev/null | grep -q '^mainnet$'; then
-  stellar network add mainnet \
-    --rpc-url https://mainnet.sorobanrpc.com \
-    --network-passphrase "Public Global Stellar Network ; September 2015"
-  echo "  red mainnet agregada a la CLI"
+
+paso "RPC de mainnet"
+SALUD=$(curl -sS --max-time 20 "$MAINNET_RPC" -X POST -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>&1 || true)
+if ! grep -q healthy <<<"$SALUD"; then
+  cat >&2 <<MSG
+El RPC $MAINNET_RPC no responde sano:
+$SALUD
+
+Probá con otro: MAINNET_RPC=https://... scripts/desplegar-mainnet.sh
+(lista en https://developers.stellar.org/docs/data/rpc/rpc-providers)
+MSG
+  exit 1
 fi
+stellar network rm "$RED" >/dev/null 2>&1 || true
+stellar network add "$RED" --rpc-url "$MAINNET_RPC" --network-passphrase "$PASSPHRASE_MAINNET"
+echo "  $MAINNET_RPC → red \"$RED\" en la CLI"
 
 paso "Tests y build"
 cargo test -p pozo -p blend-adapter -- --skip ninguna_operacion_crece_con_la_cantidad_de_cuentas
