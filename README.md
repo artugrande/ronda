@@ -14,7 +14,8 @@ Hackathon 12 → 26/09/2026 · Checkpoints 21 y 24/09 · Submission 27/09
 
 | Leé esto | Para |
 |---|---|
-| **[PRODUCTO.md](PRODUCTO.md)** | Qué construimos, alcance de 2 semanas, plan contra checkpoints |
+| **[PRODUCTO.md](PRODUCTO.md)** | Qué es Zorrito, por qué, alcance, riesgos y criterios del jurado |
+| [RONDA.md](RONDA.md) | El primer producto (la ronda rotativa), que sigue en `contracts/ronda` |
 | **[USDT0.md](USDT0.md)** | Direcciones mainnet y los 5 modos de falla que queman fondos |
 | **[CLAUDE.md](CLAUDE.md)** | Gotchas de Soroban y direcciones testnet — se autocarga en Claude Code |
 | [GAPS.md](GAPS.md) | Por qué esta idea: análisis de 812 proyectos del ecosistema |
@@ -100,8 +101,10 @@ cd web && SOLO_MIRAR=1 npm run keeper
   pool TestnetV2 `CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF`.
   Los depósitos atraviesan las tres autorizaciones anidadas y el pool paga
   interés real: el premio crece sin `adelantar`. Es el pozo que apunta la app
-- ✅ Frontend del pozo en `web/` (`/`): premio en juego, countdown, participantes,
-  total, APY, tu capital y tu probabilidad, depositar y retirar. La ronda
+- ✅ **App en https://zorritostellar.vercel.app**, con el estilo de Zorrito:
+  pestañas por pozo (semanal y demo), premio con countdown, APY de Blend, tu
+  posición, depositar y retirar, últimos ganadores leídos de los eventos, y
+  `/docs` con cómo está hecho, el azar, Blend, contratos y riesgos. La ronda
   rotativa quedó en `/ronda`
 - ✅ **Adapter de Blend** (`contracts/blend_adapter/`): Supply no colateral en
   un pool de Blend v2, testeado contra el bytecode real del protocolo. 8 tests
@@ -113,7 +116,28 @@ cd web && SOLO_MIRAR=1 npm run keeper
   lógica que el script, como función en Vercel. La dispara un cron y cada
   visita a la página que encuentra una ronda vencida o un sorteo pendiente
 - ✅ Script para enchufar Blend real en testnet
-  (`scripts/enchufar-blend-testnet.sh`)
+  (`scripts/enchufar-blend-testnet.sh`), con `VARIANTE=semanal` para el pozo
+  de 7 días
+- ⬜ Pozo semanal en testnet y prueba del flujo completo desde la app con
+  Freighter
+
+### Riesgos, sin maquillaje
+
+- **Liquidez de Blend (medio).** El capital está prestado. Si el pool tiene
+  casi toda su liquidez tomada, un retiro puede fallar hasta que alguien
+  devuelva o deposite. No se pierde capital, pero puede haber que esperar.
+  Blend sube las tasas con la utilización para que eso dure poco.
+- **Protocolo Blend (medio).** Un bug en Blend afecta al pozo como a cualquier
+  prestamista. Blend v2 está auditado; el riesgo no es cero.
+- **drand (bajo).** Si deja de publicar, no hay sorteo hasta que vuelva. El
+  capital se retira igual, con o sin sorteo pendiente.
+- **Keeper (bajo).** No hay dependencia: cualquiera cierra y sortea, y la app
+  lo hace sola en cada visita que encuentra trabajo.
+- **Renta de storage (bajo).** Las entradas de cuentas inactivas durante
+  meses vencen si nadie las extiende. Cualquiera puede; falta automatizarlo
+  en el keeper.
+- **Sin auditoría (info).** MVP construido desde cero en el hackathon, en
+  testnet.
 
 ### Enchufar Blend en vez del mock
 

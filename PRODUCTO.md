@@ -1,159 +1,130 @@
-# Ronda — ahorro rotativo multi-cadena en USDT0
+# Zorrito — ahorro premiado sin pérdida de capital
 
 **Track:** Genesis · **Categoría:** Herramientas financieras locales
-**Una línea:** La vaquita de siempre, pero el contrato guarda la plata y cada
-uno aporta desde la cadena donde ya tiene sus dólares.
+**Una línea:** Ponés plata en un pozo, el pozo genera en Blend, y cada semana
+uno de los participantes se lleva el rendimiento de todos. El capital de cada
+uno queda intacto y se retira cuando se quiera.
+
+**App:** https://zorritostellar.vercel.app · **Docs:** https://zorritostellar.vercel.app/docs
+**Repo:** https://github.com/artugrande/zorrito
+
+> Este repo arrancó como una ronda rotativa (la vaquita). Ese producto quedó
+> documentado en [RONDA.md](RONDA.md) y su contrato sigue en
+> `contracts/ronda`, pero el producto es el pozo. Este documento describe el
+> pozo.
 
 ---
 
 ## El problema
 
-La ronda de ahorro rotativo —vaquita, rueda, tanda— es el instrumento
-financiero informal más usado de Latinoamérica. Un grupo aporta un monto fijo
-por período y cada período uno se lleva el pozo entero, por turnos.
+Ahorrar es aburrido y el interés es chico. Para alguien con 50 dólares, un
+4% anual son 2 dólares al año: no cambia nada y no motiva. El resultado es que
+la mayoría no ahorra, o ahorra en el colchón, y la plata que sí llega a DeFi
+va a rendimientos que ese usuario no siente.
 
-Funciona porque resuelve algo que el banco no: te da acceso a un monto grande
-sin crédito, sin historial y sin garantía. Falla siempre por lo mismo:
+La lotería tiene el problema inverso: motiva muchísimo y destruye capital.
 
-1. **Alguien tiene que custodiar el pozo**, y ese alguien puede desaparecer.
-2. **Alguien tiene que perseguir a cada miembro** todos los meses.
-3. **En pesos, la ronda se licúa**: a 10 meses, el último turno cobra bastante
-   menos de lo que aportó el primero.
-4. Nadie construye historial: cumplir 10 meses seguidos no te sirve para nada
-   después.
+## La idea
 
-## Por qué no existe la versión digital
+Juntar las dos cosas y sacarles lo malo. El **pozo sin pérdida** (prize-linked
+savings) existe desde hace décadas en el mundo bancario (Premium Bonds en el
+Reino Unido desde 1956, más de 22 millones de participantes) y en DeFi
+(PoolTogether en Ethereum). El capital de todos genera rendimiento; el
+rendimiento se sortea; nadie pierde lo que puso.
 
-La versión cripto choca con una barrera antes del segundo miembro: **todos
-tienen que estar en la misma cadena**. El argentino promedio que ahorra en
-dólares los tiene en USDT sobre Tron o en un exchange. Pedirle que migre a otra
-red para entrar a la vaquita del grupo de WhatsApp mata el producto ahí mismo.
+Lo que no existía era una versión sobre Stellar. En los 812 proyectos del
+ecosistema relevados en [GAPS.md](GAPS.md) y [EVM-GAPS.md](EVM-GAPS.md),
+cero hacen esto. Y Stellar tiene las tres piezas que hacen falta:
 
-En los 812 proyectos del ecosistema Stellar, la única ronda de ahorro es
-**LulPay**, en Uganda, para refugiados. En Latinoamérica no hay ninguna.
+1. **Rendimiento real y componible**: Blend, el mercado de crédito, con
+   posiciones de Supply que no tienen deuda y no pueden liquidarse.
+2. **Azar verificable on-chain**: desde el Protocolo 22 el host tiene
+   funciones BLS12-381, lo que permite verificar dentro del contrato la
+   firma de [drand](https://drand.love), un beacon público de aleatoriedad.
+3. **Transacciones baratas**: cerrar y sortear cuestan fracciones de centavo,
+   así que cualquiera puede hacerlo y el sistema no depende de nadie.
 
-## Por qué USDT0 es necesario, no decorativo
+## Cómo funciona
 
-USDT0 elimina exactamente esa barrera. Es USDT nativo sobre el estándar OFT de
-LayerZero, conectando Stellar con 100+ cadenas, sin token wrappeado ni pool.
+1. **Depositás.** La plata va al contrato y de ahí a Blend como Supply, en la
+   misma transacción. Empieza a generar interés al instante.
+2. **La ronda corre.** Una semana (10 minutos en el pozo demo). Cada segundo
+   que tu plata está adentro suma peso: `depósito × tiempo`.
+3. **Cierra.** Al vencer, cualquiera cierra la ronda. El premio (todo lo que
+   generó el pozo) y el peso de cada uno se congelan. El contrato fija qué
+   ronda futura de drand va a decidir: una que todavía no existe.
+4. **drand publica.** Cuando sale, cualquiera trae la firma. El contrato la
+   verifica on-chain y elige al ganador con probabilidad proporcional al peso.
+5. **Uno cobra.** El premio va entero a la wallet del ganador. Los demás
+   siguen con exactamente lo que pusieron. La ronda siguiente ya arrancó.
 
-Y tiene una propiedad que hace que este producto sea posible y antes no:
+Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
 
-> **Un destinatario `C…` no necesita trustline.** Los balances SAC de contratos
-> viven en storage de contrato, no en trustline.
+## Qué lo hace distinto
 
-El contrato de la ronda recibe aportes **directo desde cualquier cadena, sin
-setup previo**. Uno aporta desde Tron, otro desde BSC, otro ya está en Stellar.
-Ninguno migra nada. El contrato custodia, ordena los turnos y paga.
+- **Sin roles.** No hay admin, no hay pausa, no hay clave que pueda tocar
+  fondos ni influir en el sorteo. Las dos acciones de mantenimiento son
+  permissionless.
+- **Azar que ni nosotros ni la red podemos sesgar.** No se usa nada del
+  ledger como fuente de aleatoriedad. Sesgar el sorteo exige corromper a la
+  mayoría de las ~20 organizaciones que operan drand.
+- **Sin dependencia de un keeper.** Un keeper cerrado o desaparecido no traba
+  nada: la app misma dispara el cierre y el sorteo cuando alguien la abre.
+- **Escala desde el día cero.** Fenwick tree sobre storage con capacidad para
+  un millón de cuentas. Depositar, retirar y sortear tocan ~20 entradas, con
+  2 participantes o con 1.000.000.
+- **Justo por construcción.** El peso es plata por tiempo: la misma
+  proporción con la que cada uno generó el premio. Entrar a último momento
+  con mucha plata casi no suma.
 
-Eso no se puede hacer con USDC nativo de Circle sin meter CCTP encima, y no se
-puede hacer en ninguna cadena donde la fee por transferencia sea un porcentaje
-sensible de un aporte de 20 dólares.
+## Alcance del hackathon
 
----
+### Hecho
 
-## Alcance de dos semanas
+- Contrato `pozo` (Rust/Soroban): depósitos, retiro libre, cierre, sorteo con
+  verificación BLS de drand, Fenwick tree, 37 tests.
+- Adapter de Blend v2 (`blend_adapter`): Supply no colateral, testeado
+  contra el bytecode real de Blend. 8 tests más el pozo operando a través de
+  él.
+- Testnet: pozo demo (rondas de 10 min) generando en el pool TestnetV2 de
+  Blend, con más de 20 sorteos consecutivos con firmas reales de drand.
+- Keeper serverless en Vercel, disparado por cron y por cada visita.
+- App móvil-first: premio, countdown, APY de Blend, tu posición, depositar y
+  retirar, últimos ganadores, docs.
 
-### Contrato Soroban
+### Pendiente antes de la submission
 
-```
-crear_ronda(miembros, monto_turno, periodo, orden) -> ronda_id
-registrar_intencion(ronda_id, miembro, monto)      -> monto_etiquetado
-acreditar(ronda_id, miembro, monto)                 aporte nativo en Stellar
-ejecutar_turno(ronda_id)                            paga al titular del turno
-estado(ronda_id)                                    quién pagó, de quién es el turno
-```
+- Pozo semanal en testnet (misma receta, `VARIANTE=semanal`).
+- Prueba del flujo completo desde la app con Freighter.
+- Video de demo.
 
-### Atribución: el problema real
+### Fuera de alcance
 
-Cuando llegan USDT0 desde Tron, el evento `oft_received` trae
-`["oft_received", guid, src_eid, to]` y `amount_received_ld`. **No trae de forma
-confiable quién de tus miembros pagó.**
+- Mainnet. Hace falta un pool de Blend con el token elegido (USDC es el
+  candidato), auditoría y un límite de depósito inicial.
+- Streak diario y referidos como multiplicadores de chances. Diseñados,
+  no construidos: cambian la garantía de "peso = plata × tiempo" y merecen
+  discusión aparte.
+- Extender la renta de storage de cuentas inactivas desde el keeper.
 
-`compose_msg` existe en `SendParam` y el endpoint soporta mensajes compuestos,
-pero no está verificado que el deployment de USDT0 los enrute — y sin testnet de
-USDT0 no se puede probar. **No diseñar contra eso.**
+## Riesgos, dichos
 
-La solución que sí funciona, y que los bancos usan hace décadas: **monto único
-por ventana**.
-
-1. El miembro declara la intención en la app: "aporto 20 desde Tron"
-2. El contrato le devuelve un monto etiquetado: `20.000047`
-3. Manda exactamente ese monto
-4. El indexer ve el `oft_received`, machea el monto contra la intención
-   pendiente y acredita al miembro. El `guid` queda como auditoría.
-
-**Cuidado con el decimal.** Los decimales locales son 7 y los compartidos 6: el
-OFT recorta el séptimo antes de armar el mensaje. **La etiqueta va en el sexto
-decimal o más arriba** — nunca en el séptimo, que no viaja.
-
-### Morosos
-
-Un miembro que no aporta no puede bloquear la ronda entera. Regla mínima y
-defendible: el turno paga **lo que efectivamente se juntó**, el incumplimiento
-queda registrado on-chain, y el que falla pierde su turno futuro. Las
-obligaciones de los que quedan se recalculan.
-
-Eso además produce, como subproducto, un historial de cumplimiento verificable
-— que en el ecosistema tiene un solo proyecto (Trustful).
-
-### Lo que se corta
-
-- **Yield con Blend mientras el pozo está quieto.** Tentador y encaja, pero suma
-  superficie de fallo y trustlines. Solo si sobra tiempo en la semana 2.
-- Rondas con orden por subasta (el que más descuento acepta cobra antes).
-- App nativa. Web mobile-first alcanza.
-
----
-
-## Plan, contra los checkpoints reales
-
-| Cuándo | Qué |
-|---|---|
-| **12–17/09** | Contrato + tests unitarios. Todo en **testnet con USDC**, que sí tiene testnet |
-| **21/09 · checkpoint 1** | Contrato funcionando: crear, aportar, ejecutar turno, morosos |
-| **21–24/09** | Frontend mobile-first + indexer de `oft_received` |
-| **24/09 · checkpoint 2** | Flujo completo en testnet, pata USDT0 con `quote_oft` en vivo |
-| **25–26/09** | Transferencia real de polvo en mainnet, grabada. Pitch |
-| **27/09** | Submission |
-
-**El ensayo de USDT0 no es opcional ni es al final.** Como no hay testnet, la
-única prueba de que el flujo anda es una transferencia real de centavos en
-mainnet. Hacerla la primera semana, no la última.
-
-## Guards que no se negocian
-
-1. **Verificar que el contrato existe antes de cada envío cross-chain.** La
-   existencia se lee en la *entrega*, no en el envío. Si no está desplegado
-   cuando llega el mensaje, el OFT acredita un `G…` cuya clave no tiene nadie y
-   los fondos son irrecuperables — con el origen ya habiendo quemado.
-
-   ```bash
-   stellar ledger entry fetch contract-data --contract "$RONDA" --instance \
-     --output json-formatted --network mainnet
-   ```
-
-2. **TTL con margen.** Si la instancia se archiva entre el envío y la entrega,
-   mismo desenlace. Extender dejando margen para finalidad del origen,
-   verificación de DVNs y latencia del executor.
-
-3. **Destinatario como payload crudo de 32 bytes**, nunca el strkey, nunca con
-   version byte ni checksum. Esto **no se copia de CCTP**, que sí lleva strkey
-   como hook data UTF-8.
-
-4. **Quote con piso 0 primero**, mostrar `amount_received_ld` al usuario,
-   re-quotear con su piso justo antes de mandar.
-
----
+| Riesgo | Nivel | Qué pasa y qué lo mitiga |
+|---|---|---|
+| Liquidez de Blend | medio | El capital está prestado. Con el pool casi todo tomado, un retiro puede fallar hasta que baje la utilización. No se pierde capital; puede haber que esperar. Las tasas de Blend suben con la utilización para que eso dure poco. |
+| Protocolo Blend | medio | Un bug en Blend afecta al pozo como a cualquier prestamista. Blend v2 está auditado; el riesgo no es cero. |
+| drand se detiene | bajo | No hay sorteo hasta que vuelva. El capital se retira igual. |
+| Keeper caído | bajo | Cualquiera cierra y sortea; la app lo hace sola en cada visita. |
+| Renta de storage | bajo | Las cuentas inactivas meses vencen si nadie las extiende. Cualquiera puede; falta automatizarlo. |
+| MVP sin auditoría | info | Construido desde cero en el hackathon. Testnet. |
 
 ## Qué contesta cada criterio del jurado
 
-- **Validación del problema** — La ronda informal existe y se usa hoy, a mano,
-  en millones de grupos. No hay que inventar demanda.
-- **Foco de negocio** — Cada ronda trae 4 a 10 usuarios de una, por invitación
-  de alguien que ya confían. La distribución es el producto.
-- **Foco de producto** — El usuario no migra de cadena, no aprende qué es una
-  trustline y no compra nada: usa los dólares que ya tiene.
-- **Ejecución técnica** — USDT0 no es un logo en el slide: sin recepción
-  multi-cadena sin trustline, este producto no existe. Y el guard de entrega
-  demuestra que entendimos un modo de falla que quema fondos.
+- **Innovación**: el primer pozo sin pérdida en Stellar, con azar verificable
+  on-chain vía drand + BLS12-381, sin roles ni keeper de confianza.
+- **Uso de Stellar**: Soroban, host functions BLS del Protocolo 22, Blend
+  como fuente de rendimiento, SAC nativo, Stellar Wallets Kit.
+- **Funciona**: desplegado, con decenas de rondas reales sorteadas en testnet
+  contra Blend y drand. Todo verificable en stellar.expert.
+- **Impacto**: convierte el ahorro en algo que motiva, sin que nadie pueda
+  perder. Diseñado para un millón de usuarios desde el primer commit.
