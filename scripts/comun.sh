@@ -97,7 +97,7 @@ leer_drand() {
 # identidad que paga el deploy (pozo-admin por defecto).
 desplegar_pozo() {
   local red="$1" token="$2" fuente="$3" periodo="$4" tope="${5:-0}" origen="${6:-pozo-admin}" pozo
-  pozo=$(stellar contract deploy --fee "$STELLAR_FEE" \
+  pozo=$(stellar contract deploy --inclusion-fee "$STELLAR_FEE" \
     --wasm target/wasm32v1-none/release/pozo.wasm \
     --source "$origen" --network "$red" \
     -- \
@@ -109,7 +109,7 @@ desplegar_pozo() {
     --drand_genesis "$DRAND_GENESIS" \
     --drand_periodo "$DRAND_PERIODO")
   [[ -n "$pozo" ]] || { echo "el deploy del pozo no devolvió dirección" >&2; return 1; }
-  stellar contract extend --fee "$STELLAR_FEE" --id "$pozo" --durability persistent \
+  stellar contract extend --inclusion-fee "$STELLAR_FEE" --id "$pozo" --durability persistent \
     --ledgers-to-extend 518400 --source "$origen" --network "$red" >/dev/null
   echo "$pozo"
 }

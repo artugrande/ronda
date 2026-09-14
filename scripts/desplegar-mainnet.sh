@@ -123,7 +123,7 @@ paso "1. Deploy del adapter"
 if [[ -n "${ADAPTER:-}" ]]; then
   echo "  reusando $ADAPTER"
 else
-ADAPTER=$(stellar contract deploy --fee "$STELLAR_FEE" \
+ADAPTER=$(stellar contract deploy --inclusion-fee "$STELLAR_FEE" \
   --wasm target/wasm32v1-none/release/blend_adapter.wasm \
   --source "$IDENTIDAD" --network "$RED" \
   -- \
@@ -132,7 +132,7 @@ ADAPTER=$(stellar contract deploy --fee "$STELLAR_FEE" \
   --token "$TOKEN")
 [[ -n "$ADAPTER" ]] || { echo "el deploy del adapter no devolvió dirección" >&2; exit 1; }
 fi
-stellar contract extend --fee "$STELLAR_FEE" --id "$ADAPTER" --durability persistent \
+stellar contract extend --inclusion-fee "$STELLAR_FEE" --id "$ADAPTER" --durability persistent \
   --ledgers-to-extend 518400 --source "$IDENTIDAD" --network "$RED" >/dev/null
 echo "  $ADAPTER"
 
@@ -141,7 +141,7 @@ POZO=$(desplegar_pozo "$RED" "$TOKEN" "$ADAPTER" "$PERIODO" "$TOPE" "$IDENTIDAD"
 echo "  $POZO"
 
 paso "3. El adapter aprende quién es su dueño"
-stellar contract invoke --fee "$STELLAR_FEE" --id "$ADAPTER" --source "$IDENTIDAD" --network "$RED" -- \
+stellar contract invoke --inclusion-fee "$STELLAR_FEE" --id "$ADAPTER" --source "$IDENTIDAD" --network "$RED" -- \
   fijar_dueno --dueno "$POZO"
 echo "  dueño: $POZO"
 
