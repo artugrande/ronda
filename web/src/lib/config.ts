@@ -44,14 +44,17 @@ export type Pozo = {
 };
 
 /**
- * Direcciones fijas, para que la app ande sin configurar nada. Las variables
- * de entorno las pisan. Vacío = todavía no hay deploy de esa variante.
+ * Las direcciones de los pozos viven acá, en el código, y en ningún otro
+ * lado: un deploy nuevo es un commit. Las variables de entorno no las pisan,
+ * para que un valor viejo olvidado en Vercel no apunte la app a un pozo
+ * anterior. Para desarrollo local, NEXT_PUBLIC_POZO_LOCAL apunta el pozo de
+ * prueba a otro.
  */
 const DIRECCIONES = {
   // Zorrito en mainnet: semanal, tope 5.000 XLM, generando en el pool Fixed de Blend.
-  mainnet: process.env.NEXT_PUBLIC_POZO_MAINNET || "CAR46DV7YNGNEOAI67SWY3WAQX2IGDWTHBRGDHJSW6EQQDR7XMGKUKQP",
+  mainnet: "CAR46DV7YNGNEOAI67SWY3WAQX2IGDWTHBRGDHJSW6EQQDR7XMGKUKQP",
   // Pozo de prueba en testnet, rondas de 10 min, generando en Blend TestnetV2.
-  testnet: process.env.NEXT_PUBLIC_POZO || "CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2",
+  testnet: process.env.NEXT_PUBLIC_POZO_LOCAL || "CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2",
 };
 
 function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
