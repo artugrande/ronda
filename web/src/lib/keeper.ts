@@ -20,7 +20,6 @@
 
 import {
   Account,
-  BASE_FEE,
   Contract,
   Keypair,
   TransactionBuilder,
@@ -28,6 +27,7 @@ import {
   rpc,
   xdr,
 } from "@stellar/stellar-sdk";
+import { feeDeInclusion } from "./contrato";
 import { beacon, descomprimirG1, momentoDe } from "./drand";
 import { aTexto } from "./montos";
 
@@ -68,9 +68,12 @@ export async function estadoDelPozo(c: Conexion): Promise<Estado> {
 
 async function invocar(c: Conexion, firmante: Keypair, metodo: string, args: xdr.ScVal[]) {
   const servidor = new rpc.Server(c.rpcUrl);
-  const cuenta = await servidor.getAccount(firmante.publicKey());
+  const [cuenta, fee] = await Promise.all([
+    servidor.getAccount(firmante.publicKey()),
+    feeDeInclusion(servidor),
+  ]);
   const tx = new TransactionBuilder(new Account(cuenta.accountId(), cuenta.sequenceNumber()), {
-    fee: BASE_FEE,
+    fee,
     networkPassphrase: c.passphrase,
   })
     .addOperation(new Contract(c.pozo).call(metodo, ...args))

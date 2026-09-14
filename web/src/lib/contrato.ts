@@ -10,7 +10,6 @@
 import {
   Account,
   Address,
-  BASE_FEE,
   Contract,
   TransactionBuilder,
   nativeToScVal,
@@ -26,6 +25,24 @@ export type Conexion = { rpcUrl: string; passphrase: string };
 export const CONEXION_POR_DEFECTO: Conexion = { rpcUrl: RPC_URL, passphrase: PASSPHRASE_RED };
 
 const servidores = new Map<string, rpc.Server>([[RPC_URL, servidor]]);
+
+/**
+ * Fee de inclusión (stroops) para entrar en el próximo ledger. En testnet la
+ * mínima alcanza; en mainnet hay momentos de demanda en los que 100 stroops
+ * quedan afuera con `tx_insufficient_fee`. Se le pregunta a la red y se paga
+ * un poco más que la mediana, con techo de 0,05 XLM.
+ */
+export async function feeDeInclusion(servidor: rpc.Server): Promise<string> {
+  const MINIMA = 100;
+  const TECHO = 500_000;
+  try {
+    const stats = await servidor.getFeeStats();
+    const p = Number(stats.sorobanInclusionFee.p70 || stats.sorobanInclusionFee.p50 || MINIMA);
+    return String(Math.min(Math.max(p, MINIMA) * 2, TECHO));
+  } catch {
+    return String(MINIMA);
+  }
+}
 
 /** Un `rpc.Server` por URL, reusado. */
 export function servidorDe(rpcUrl: string): rpc.Server {
@@ -191,12 +208,12 @@ export async function invocarEn(
   cx: Conexion = CONEXION_POR_DEFECTO,
 ): Promise<string> {
   const servidor = servidorDe(cx.rpcUrl);
-  const cuenta = await servidor.getAccount(fuente);
+  const [cuenta, fee] = await Promise.all([servidor.getAccount(fuente), feeDeInclusion(servidor)]);
   const contrato = new Contract(contratoId);
 
   const tx = new TransactionBuilder(
     new Account(cuenta.accountId(), cuenta.sequenceNumber()),
-    { fee: BASE_FEE, networkPassphrase: cx.passphrase },
+    { fee, networkPassphrase: cx.passphrase },
   )
     .addOperation(contrato.call(metodo, ...args))
     .setTimeout(60)
