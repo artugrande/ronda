@@ -615,6 +615,17 @@ footer.glass a.marca {
 .marca-sep {
   opacity: 0.6;
 }
+/* El logo de Soroswap es blanco con el ícono violeta, para fondos oscuros.
+   Sobre las docs (blanco) se invierte: el texto queda negro y el violeta,
+   violeta. */
+.logo-soroswap {
+  display: block;
+  height: 22px;
+  width: auto;
+}
+body.docs-page .logo-soroswap {
+  filter: invert(1) hue-rotate(180deg);
+}
 
 /* Botones de moneda con ícono */
 .btn-moneda {

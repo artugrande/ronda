@@ -91,7 +91,8 @@ export function Marco({
               <LogoBlend alto={18} /> Blend
             </a>
             <a className="marca" href="https://soroswap.finance" target="_blank" rel="noopener">
-              Soroswap
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/assets/soroswap.svg" alt="Soroswap" className="logo-soroswap" height={22} width={64} />
             </a>
             <span className="marca">DEX de Stellar</span>
           </div>
