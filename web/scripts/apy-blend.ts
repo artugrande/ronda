@@ -1,15 +1,19 @@
 /**
  * Qué paga Blend hoy por prestar cada token en cada pool. Para elegir dónde
- * pone su capital el pozo.
+ * pone su capital el pozo, y para ver qué tokens tienen reserva (si un
+ * token no aparece, Blend no lo presta y no puede ser el token de un pozo).
  *
  *   npx tsx scripts/apy-blend.ts            # mainnet
  *   npx tsx scripts/apy-blend.ts testnet
  *
- * Direcciones de blend-utils/{mainnet,testnet}.contracts.json.
+ * Direcciones de los pools de blend-utils/{mainnet,testnet}.contracts.json.
+ * Las reservas se leen del pool (`get_reserve_list`), y el símbolo de cada
+ * token, del token.
  */
 
 import { PASSPHRASE, RPC, type Red } from "../src/lib/config";
 import { porcentaje, tasaDeReserva } from "../src/lib/blend";
+import { servidorDe } from "../src/lib/contrato";
 
 const POOLS: Record<Red, Record<string, string>> = {
   mainnet: {
@@ -21,32 +25,39 @@ const POOLS: Record<Red, Record<string, string>> = {
   },
 };
 
-const TOKENS: Record<Red, Record<string, string>> = {
-  mainnet: {
-    XLM: "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
-    USDC: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
-  },
-  testnet: {
-    XLM: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
-    USDC: "CAQCFVLOBK5GIULPNZRGATJJMIZL5BSP7X5YJVMGCPTUEPFM4AVSRCJU",
-  },
-};
-
 async function main() {
   const red: Red = process.argv[2] === "testnet" ? "testnet" : "mainnet";
+  const servidor = servidorDe(RPC[red]);
   console.log(`Blend v2 en ${red}\n`);
-  console.log("pool        token  presta al  piden al  uso     ofrecido        prestado");
+  console.log("pool        token   presta al  piden al  uso     ofrecido        prestado   contrato");
   for (const [pool, poolId] of Object.entries(POOLS[red])) {
-    for (const [token, tokenId] of Object.entries(TOKENS[red])) {
+    const { result: reservas } = await servidor.queryContract<string[]>(
+      poolId,
+      "get_reserve_list",
+      {},
+      PASSPHRASE[red],
+    );
+    for (const tokenId of reservas) {
+      const simbolo = await simboloDe(servidor, tokenId, PASSPHRASE[red]);
       try {
         const t = await tasaDeReserva(RPC[red], PASSPHRASE[red], poolId, tokenId);
         console.log(
-          `${pool.padEnd(11)} ${token.padEnd(6)} ${porcentaje(t.apy).padStart(9)} ${porcentaje(t.aprPrestamo).padStart(9)} ${(t.utilizacion * 100).toFixed(1).padStart(5)} %  ${miles(t.oferta).padStart(14)}  ${miles(t.deuda).padStart(14)}`,
+          `${pool.padEnd(11)} ${simbolo.padEnd(7)} ${porcentaje(t.apy).padStart(9)} ${porcentaje(t.aprPrestamo).padStart(9)} ${(t.utilizacion * 100).toFixed(1).padStart(5)} %  ${miles(t.oferta).padStart(14)}  ${miles(t.deuda).padStart(14)}   ${tokenId}`,
         );
       } catch (e) {
-        console.log(`${pool.padEnd(11)} ${token.padEnd(6)} sin reserva (${e instanceof Error ? e.message.slice(0, 40) : e})`);
+        console.log(`${pool.padEnd(11)} ${simbolo.padEnd(7)} no se pudo leer (${e instanceof Error ? e.message.slice(0, 40) : e})`);
       }
     }
+  }
+}
+
+async function simboloDe(servidor: ReturnType<typeof servidorDe>, token: string, passphrase: string) {
+  try {
+    const { result } = await servidor.queryContract<string>(token, "symbol", {}, passphrase);
+    // El SAC de XLM nativo dice "native".
+    return result === "native" ? "XLM" : result;
+  } catch {
+    return token.slice(0, 6) + "…";
   }
 }
 
