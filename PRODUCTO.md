@@ -108,8 +108,10 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
   Stellar desde septiembre de 2026; hoy solo el DEX lo cambia (10 USDT0 →
   9,9955 USDC), y Soroswap entra a la comparación cuando tenga el par.
 
-- Probado en mainnet con Freighter, con plata real: cambio de XLM a USDC
-  por Soroswap, depósito en Blend y retiro completo, todo desde la app.
+- Probado en mainnet con Freighter, con plata real, todo desde la app:
+  cambio de XLM a USDC por Soroswap y por el DEX clásico (path payment),
+  depósito en Blend y retiro completo. Por ejemplo,
+  [f1a4be3a…](https://stellar.expert/explorer/public/tx/f1a4be3a828eb0bc704881ceedf24c6caf7c556aff2436b18d5fe87032b43271).
 
 ### Pendiente antes de la submission
 
