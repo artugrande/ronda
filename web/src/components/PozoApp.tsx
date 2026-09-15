@@ -606,7 +606,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
               )}
             </Panel>
 
-            {yo && cuenta && <Referidos yo={yo} cuenta={cuenta} ruta={pozo.ruta} simbolo={pozo.simbolo} />}
+            {yo && <Referidos yo={yo} cuenta={cuenta} ruta={pozo.ruta} simbolo={pozo.simbolo} />}
             <Blend tasa={tasa} simbolo={pozo.simbolo} />
             <ComoFunciona />
           </div>
@@ -829,7 +829,18 @@ function Racha({
   );
 }
 
-function Referidos({ yo, cuenta, ruta, simbolo }: { yo: string; cuenta: Cuenta; ruta: string; simbolo: string }) {
+function Referidos({
+  yo,
+  cuenta,
+  ruta,
+  simbolo,
+}: {
+  yo: string;
+  /** `null` hasta el primer depósito: el contrato todavía no conoce esta wallet. */
+  cuenta: Cuenta | null;
+  ruta: string;
+  simbolo: string;
+}) {
   const [copiado, setCopiado] = useState(false);
   const link =
     typeof window === "undefined" ? "" : `${window.location.origin}${ruta}?ref=${yo}`;
@@ -840,6 +851,12 @@ function Referidos({ yo, cuenta, ruta, simbolo }: { yo: string; cuenta: Cuenta; 
         <span className="font-bold text-foreground">10 % de su capital</span> como chances,
         mientras esté adentro. Hasta la mitad de tu propio capital.
       </p>
+      {!cuenta && (
+        <p className="aviso mt-3 text-xs">
+          Tu link empieza a contar con tu primer depósito: el pozo tiene que conocer tu wallet
+          para anotarte como referente. Copialo igual y compartilo.
+        </p>
+      )}
       <div className="mt-3 flex gap-2">
         <input readOnly value={link} className="input-monto flex-1 !text-left !text-xs !font-semibold !text-tenue" />
         <button
@@ -858,12 +875,12 @@ function Referidos({ yo, cuenta, ruta, simbolo }: { yo: string; cuenta: Cuenta; 
       <div className="mt-3 grid grid-cols-2 gap-2">
         <div className="stat">
           <div className="stat-label">Referidos</div>
-          <div className="stat-value cifra">{cuenta.referidos}</div>
+          <div className="stat-value cifra">{cuenta?.referidos ?? 0}</div>
         </div>
         <div className="stat">
           <div className="stat-label">Te suman</div>
           <div className="stat-value naranja cifra">
-            {aTexto(cuenta.bonoRef, 0)} <span className="stat-unit">{simbolo} de peso</span>
+            {aTexto(cuenta?.bonoRef ?? 0n, 0)} <span className="stat-unit">{simbolo} de peso</span>
           </div>
         </div>
       </div>
