@@ -69,7 +69,7 @@ export type Pozo = {
 const DIRECCIONES = {
   // Zorrito en mainnet: USDC, semanal, tope 5.000, generando en el pool Fixed
   // de Blend. (El primer deploy, CAR46DV7…UKQP, era de XLM y pagaba 0 %.)
-  mainnet: "",
+  mainnet: "CBPOMGHGCWH2QMG4V4FTZKGBCEN7K37R2OIDGD5VWBAKYTOWG7CDCGGA",
   // Pozo de prueba en testnet, rondas de 10 min, generando en Blend TestnetV2.
   testnet: process.env.NEXT_PUBLIC_POZO_LOCAL || "CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2",
 };
