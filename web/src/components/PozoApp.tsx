@@ -903,6 +903,13 @@ function mensaje(e: unknown): string {
   if (crudo.includes("balance is not within the allowed range")) {
     return "No te alcanza el saldo de la wallet para ese monto. Stellar además reserva 1 XLM que no se puede gastar.";
   }
+  if (crudo.includes("tx_insufficient_balance")) {
+    // La red cobra el storage que crea la transacción. El primer depósito
+    // del pozo arma el árbol del sorteo y paga su renta; los siguientes, no.
+    const fee = /"fee_charged":"(\d+)"/.exec(crudo)?.[1];
+    const cuanto = fee ? `${aTexto(BigInt(fee), 2)} XLM` : "más XLM de lo que tenés libre";
+    return `La red pide ${cuanto} de fee para esta transacción y tu wallet no tiene tanto XLM libre (Stellar reserva 1,5 XLM). Mandale XLM y volvé a intentar. Si venías de un cambio, el USDC ya está en tu wallet: elegí USDC y tocá Depositar.`;
+  }
   if (crudo.includes("Error(Contract, #13)")) return "El pozo llegó a su tope de capital. Probá con menos.";
   if (crudo.includes("Error(Contract, #14)")) return "Hoy ya marcaste la racha. Mañana suma más.";
   if (crudo.includes("Error(Contract, #15)")) return "Para marcar la racha tenés que tener capital adentro.";
