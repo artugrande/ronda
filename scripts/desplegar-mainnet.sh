@@ -71,12 +71,15 @@ fi
 echo "  $ADMIN"
 SALDO=$(curl -sS --max-time 20 "https://horizon.stellar.org/accounts/$ADMIN" 2>/dev/null \
   | grep -B3 '"asset_type": "native"' | sed -n 's/.*"balance": "\([0-9.]*\)".*/\1/p' | head -n 1)
-MINIMO_XLM=25
+# El deploy completo (los dos WASM, el pozo pesa 30 KB de storage) anda por
+# los 25 XLM. Un WASM que ya está en la red sale casi gratis:
+# web/scripts/costo-deploy.ts dice el número exacto; MINIMO_XLM lo ajusta.
+MINIMO_XLM="${MINIMO_XLM:-25}"
 if [[ -z "$SALDO" ]] || (( $(printf '%.0f' "$SALDO") < MINIMO_XLM )); then
   cat >&2 <<MSG
-La cuenta tiene ${SALDO:-0} XLM y el deploy completo necesita unos $MINIMO_XLM:
-subir dos WASM (el pozo pesa 30 KB de storage), desplegarlos, pagar la renta
-del primer mes y las fees. Mandale XLM a $ADMIN y volvé a correr.
+La cuenta tiene ${SALDO:-0} XLM y el deploy necesita unos $MINIMO_XLM. Mandale XLM
+a $ADMIN y volvé a correr, o si ya medíste el costo con
+web/scripts/costo-deploy.ts y alcanza, corré MINIMO_XLM=<n> scripts/desplegar-mainnet.sh.
 MSG
   exit 1
 fi
