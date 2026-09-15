@@ -81,9 +81,8 @@ export function Marco({
             </a>
           </div>
           <div className="marcas">
-            <span className="marca">
+            <span className="marca" title={`Stellar ${red}`}>
               <LogoStellar alto={16} />
-              <span className="marca-red">{red}</span>
             </span>
             <span className="marca-sep">·</span>
             <span className="marca-texto">Powered by</span>

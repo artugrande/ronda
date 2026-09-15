@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Marco } from "@/components/Marco";
-import { PRINCIPAL, TEST } from "@/lib/config";
+import { PRINCIPAL, SOROSWAP_ROUTER, TEST, USDT0_MAINNET } from "@/lib/config";
 import { explorer } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -12,6 +12,8 @@ export const metadata: Metadata = {
 
 const BLEND_TESTNET = "CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF";
 const BLEND_MAINNET = "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD";
+const ADAPTER_MAINNET = "CD5XQWHFSW427KOQAMAXBMMM6X4BIH6AXZUP76PBB6SWYSSAA4D53MKC";
+const ADAPTER_TESTNET = "CCHLQA7SGZAEVGLAFUL4Y6DMBG7ZUZYSZZ7AGN44GNNJCCJ6VECV7ISA";
 const DRAND_PK =
   "83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a";
 
@@ -40,8 +42,8 @@ export default function Docs() {
         <div className="flex flex-col gap-3">
           <Paso n={1} titulo="Depositás USDC">
             Tu depósito va directo a Blend y empieza a generar al instante. No hay mínimo. Cada
-            dólar, y cada segundo que está adentro, suma chances. (El pozo de prueba en testnet
-            usa XLM.)
+            dólar, y cada segundo que está adentro, suma chances. Si tenés XLM o USDT0, la app
+            los cambia por USDC en la puerta. (El pozo de prueba en testnet usa XLM.)
           </Paso>
           <Paso n={2} titulo="El pozo genera">
             El capital de todos se presta en Blend, el mercado de crédito de Stellar. El interés
@@ -297,9 +299,9 @@ export default function Docs() {
               </td>
               <td>
                 Rust + Soroban (<code>soroban-sdk</code> 27). Tres contratos: el pozo, el adapter
-                de Blend y un mock de rendimiento para tests. 58 tests, incluida la verificación
-                BLS con claves propias, la racha, los referidos y el pozo operando contra el
-                bytecode real de Blend.
+                de Blend y un mock de rendimiento para tests. 60 tests, incluida la verificación
+                BLS con claves propias, la racha, los referidos, el redondeo de Blend y el pozo
+                operando contra el bytecode real de Blend.
               </td>
             </tr>
             <tr>
@@ -319,6 +321,18 @@ export default function Docs() {
               <td>
                 Blend v2: la reserva de USDC del pool Fixed en mainnet, la de XLM de TestnetV2
                 en testnet. Integrado con <code>contractimport!</code> de los WASM oficiales.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Cambio de moneda</strong>
+              </td>
+              <td>
+                Para entrar con XLM o USDT0: cotización simultánea en el router de Soroswap
+                (simulación de <code>router_get_amounts_out</code>) y en el DEX clásico
+                (<code>/paths/strict-send</code> de Horizon), y cambio por el que más da con{" "}
+                <code>swap_exact_tokens_for_tokens</code> o un <code>pathPaymentStrictSend</code>.
+                En la wallet del usuario, nunca en el pozo.
               </td>
             </tr>
             <tr>
@@ -346,10 +360,14 @@ export default function Docs() {
 
         <h2 id="contratos">📋 Contratos</h2>
         {principal && principal.red === "mainnet" && (
-          <Direccion etiqueta="Pozo Zorrito · mainnet · semanal" id={principal.id} red="mainnet" />
+          <Direccion etiqueta="Pozo Zorrito · mainnet · USDC · semanal" id={principal.id} red="mainnet" />
         )}
+        <Direccion etiqueta="Adapter de Blend · mainnet" id={ADAPTER_MAINNET} red="mainnet" />
         <Direccion etiqueta="Pool de Blend v2 · mainnet (Fixed)" id={BLEND_MAINNET} red="mainnet" />
-        {test && <Direccion etiqueta="Pozo de prueba · testnet · 10 min" id={test.id} red="testnet" />}
+        <Direccion etiqueta="Router de Soroswap · mainnet" id={SOROSWAP_ROUTER.mainnet} red="mainnet" />
+        <Direccion etiqueta="USDT0 (Tether vía LayerZero) · mainnet" id={USDT0_MAINNET.token} red="mainnet" />
+        {test && <Direccion etiqueta="Pozo de prueba · testnet · XLM · 10 min" id={test.id} red="testnet" />}
+        <Direccion etiqueta="Adapter de Blend · testnet" id={ADAPTER_TESTNET} red="testnet" />
         <Direccion etiqueta="Pool de Blend v2 · testnet (TestnetV2)" id={BLEND_TESTNET} red="testnet" />
         <div className="addr-box">
           <span className="addr-label">drand quicknet · clave pública del grupo (G2)</span>

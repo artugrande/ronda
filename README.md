@@ -16,7 +16,7 @@ Hackathon 12 → 26/09/2026 · Checkpoints 21 y 24/09 · Submission 27/09
 |---|---|
 | **[PRODUCTO.md](PRODUCTO.md)** | Qué es Zorrito, por qué, alcance, riesgos y criterios del jurado |
 | [RONDA.md](RONDA.md) | El primer producto (la ronda rotativa), que sigue en `contracts/ronda` |
-| **[USDT0.md](USDT0.md)** | Direcciones mainnet y los 5 modos de falla que queman fondos |
+| [USDT0.md](USDT0.md) | Del primer producto: USDT0 como OFT cross-chain para la ronda, y sus modos de falla |
 | **[CLAUDE.md](CLAUDE.md)** | Gotchas de Soroban y direcciones testnet — se autocarga en Claude Code |
 | [GAPS.md](GAPS.md) | Por qué esta idea: análisis de 812 proyectos del ecosistema |
 | [EVM-GAPS.md](EVM-GAPS.md) | 50 primitivas EVM vs. Stellar |
@@ -85,7 +85,7 @@ cd web && SOLO_MIRAR=1 npm run keeper
 - ✅ **Contrato `pozo`** — depósitos, retiro libre, peso depósito × tiempo,
   sorteo por firma de drand verificada on-chain (BLS12-381), sin roles
   privilegiados, Fenwick tree sobre storage con capacidad para un millón de
-  cuentas. 37 tests, footprint y costo medidos
+  cuentas. 50 tests, footprint y costo medidos
 - ✅ Keeper permissionless del pozo (`web/scripts/keeper.ts`) y helper que
   descomprime la clave de drand para el deploy
 - ✅ **Pozo corriendo en testnet con el mock**:
@@ -102,14 +102,16 @@ cd web && SOLO_MIRAR=1 npm run keeper
   Rondas de 10 min, con racha y referidos. Los depósitos atraviesan las tres
   autorizaciones anidadas y el pool paga interés real. El anterior
   (`CCAM3QUE…HWHRZ`, sin racha) sorteó decenas de rondas y sigue vivo
-- ✅ **App en https://stellar.zorrito.app**, con el estilo de Zorrito:
-  pestañas por pozo (semanal y demo), premio con countdown, APY de Blend, tu
-  posición, depositar y retirar, últimos ganadores leídos de los eventos, y
-  `/docs` con cómo está hecho, el azar, Blend, contratos y riesgos. La ronda
-  rotativa quedó en `/ronda`
+- ✅ **App en https://stellar.zorrito.app**, con el estilo de Zorrito: la
+  home es el pozo de mainnet y `/test` el de prueba; premio creciendo en
+  vivo, countdown con segundos, APY de Blend, tu posición, depositar en
+  USDC o entrando con XLM o USDT0, retirar, racha, referidos, últimos
+  ganadores leídos de los eventos, y `/docs` con cómo está hecho, el azar,
+  Blend, contratos y riesgos. La ronda rotativa quedó en `/ronda`
 - ✅ **Adapter de Blend** (`contracts/blend_adapter/`): Supply no colateral en
-  un pool de Blend v2, testeado contra el bytecode real del protocolo. 8 tests
-  propios más el pozo operando a través de él. Lo que no cubre ningún test es
+  un pool de Blend v2, testeado contra el bytecode real del protocolo. 10 tests
+  propios más el pozo operando a través de él. Cubre el redondeo de Blend
+  con un fondo de polvo en el adapter (un stroop de más en cada retiro). Lo que no cubre ningún test es
   el devengo del interés, porque Blend solo genera cuando alguien pide
   prestado — eso se ve recién en un pool con actividad
 
@@ -152,8 +154,8 @@ cd web && SOLO_MIRAR=1 npm run keeper
 - **Renta de storage (bajo).** Las entradas de cuentas inactivas durante
   meses vencen si nadie las extiende. Cualquiera puede; falta automatizarlo
   en el keeper.
-- **Sin auditoría (info).** MVP construido desde cero en el hackathon, en
-  testnet.
+- **Sin auditoría (medio).** Construido desde cero en el hackathon. Por eso
+  el pozo de mainnet tiene un tope de capital fijo en el contrato.
 
 ### Enchufar Blend en vez del mock
 
@@ -164,15 +166,18 @@ POOL=C... scripts/enchufar-blend-testnet.sh # otro pool
 ```
 
 El de mainnet necesita una identidad de la CLI con XLM (`IDENTIDAD`, por
-defecto `zorrito-mainnet`) y pone un tope de capital (`TOPE_XLM`, 5.000 por
-defecto) porque es plata real en un contrato sin auditoría. Las direcciones
-van fijas en `web/src/lib/config.ts`; la app no necesita variables en Vercel.
+defecto `zorrito-mainnet`), deploya contra USDC (`ACTIVO`, o `native` para
+XLM) y pone un tope de capital (`TOPE`, 5.000 por defecto) porque es plata
+real en un contrato sin auditoría. `web/scripts/costo-deploy.ts` dice cuánto
+XLM hace falta antes de gastar. Las direcciones van fijas en
+`web/src/lib/config.ts`; la app no necesita variables en Vercel.
 
 Verifica que el pool tenga al token como reserva, deploya el adapter, deploya
 un pozo nuevo apuntando al adapter y le fija al adapter su dueño. El orden lo
 impone la construcción: el pozo se construye apuntando a la fuente, y el
-adapter no puede conocer al pozo antes de que exista. Deja `web/.env.local`
-apuntando al pozo nuevo.
+adapter no puede conocer al pozo antes de que exista. El de testnet deja
+`web/.env.local` apuntando al pozo nuevo; el de mainnet imprime la dirección
+para ponerla en `config.ts`.
 
 El adapter usa `Supply` (no colateral): la posición genera interés y no puede
 liquidarse, y no toca el oráculo. Los WASMs de Blend que usan los tests están
@@ -207,6 +212,12 @@ alguien abra la app una vez por semana alcanza. Para verificarlo:
 curl -s https://<tu-deploy>.vercel.app/api/keeper
 # {"ok":true,"firma":true,"paso":{"accion":"espera","detalle":"ronda 3: 2 participantes, ..."}}
 ```
+
+## La ronda rotativa: el primer producto
+
+> Todo lo que sigue es de la ronda rotativa (la vaquita), el producto con el
+> que arrancó el repo. Sigue en `contracts/ronda` y en `/ronda`, y queda acá
+> como referencia. El producto es el pozo, arriba. Ver [RONDA.md](RONDA.md).
 
 - ✅ Contrato `ronda` — turnos, aportes nativos, atribución cross-chain por
   monto etiquetado, morosos y reembolso. 21 tests en verde

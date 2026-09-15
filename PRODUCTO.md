@@ -82,15 +82,17 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
 ### Hecho
 
 - Contrato `pozo` (Rust/Soroban): depósitos, retiro libre, cierre, sorteo con
-  verificación BLS de drand, Fenwick tree, 37 tests.
+  verificación BLS de drand, Fenwick tree, racha, referidos y tope. 50 tests.
 - Adapter de Blend v2 (`blend_adapter`): Supply no colateral, testeado
-  contra el bytecode real de Blend. 8 tests más el pozo operando a través de
-  él.
+  contra el bytecode real de Blend, con fondo de polvo para el redondeo del
+  pool. 10 tests más el pozo operando a través de él.
 - Testnet: pozo demo (rondas de 10 min) generando en el pool TestnetV2 de
   Blend, con más de 20 sorteos consecutivos con firmas reales de drand.
 - Keeper serverless en Vercel, disparado por cron y por cada visita.
-- App móvil-first: premio, countdown, APY de Blend, tu posición, depositar y
-  retirar, últimos ganadores, docs.
+- App móvil-first en https://stellar.zorrito.app: premio creciendo en vivo,
+  countdown con segundos, APY de Blend, tu posición, depositar y retirar,
+  trustline con un botón, carteles en lenguaje normal con link a cada
+  transacción, últimos ganadores, docs.
 
 - Racha diaria y referidos, en el contrato y en la app, en la misma unidad
   que el peso: la semana completa de "ahorré hoy" duplica las chances; cada
@@ -141,8 +143,11 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
 - **Innovación**: el primer pozo sin pérdida en Stellar, con azar verificable
   on-chain vía drand + BLS12-381, sin roles ni keeper de confianza.
 - **Uso de Stellar**: Soroban, host functions BLS del Protocolo 22, Blend
-  como fuente de rendimiento, SAC nativo, Stellar Wallets Kit.
-- **Funciona**: en mainnet, con Blend y drand de verdad, y decenas de rondas
-  sorteadas en testnet. Todo verificable en stellar.expert.
+  como fuente de rendimiento, USDC y USDT0 como SAC, Soroswap y el DEX
+  clásico (path payments) para entrar con cualquier moneda, Stellar Wallets
+  Kit.
+- **Funciona**: en mainnet con plata real (cambio, depósito en Blend y
+  retiro probados desde la app), y decenas de rondas sorteadas en testnet.
+  Todo verificable en stellar.expert.
 - **Impacto**: convierte el ahorro en algo que motiva, sin que nadie pueda
   perder. Diseñado para un millón de usuarios desde el primer commit.

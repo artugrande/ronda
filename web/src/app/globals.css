@@ -604,10 +604,6 @@ body.docs-page footer.glass a {
 footer.glass a.marca {
   text-decoration: none;
 }
-.marca-red {
-  text-transform: capitalize;
-  opacity: 0.85;
-}
 .marca-texto {
   opacity: 0.75;
   font-weight: 500;
