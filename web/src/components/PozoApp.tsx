@@ -32,8 +32,11 @@ import { Boton, Etiqueta, Panel, corta, explorer } from "@/components/ui";
 
 type Accion = null | "depositar" | "cambiar" | "retirar" | "conectar" | "racha" | "trustline";
 
-/** Con qué paga el usuario: el token del pozo, o XLM que se cambia en Soroswap. */
-type Moneda = "pozo" | "xlm";
+/**
+ * Con qué paga el usuario: `null` es el token del pozo; si no, el símbolo de
+ * una moneda de entrada (XLM, USDT0) que se cambia en Soroswap.
+ */
+type Moneda = string | null;
 
 /** Un cartel de estado: qué pasó, en lenguaje normal, y opcionalmente la transacción o el detalle técnico. */
 type Mensaje = { texto: string; tx?: string; detalle?: string };
@@ -123,7 +126,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
   const [accion, setAccion] = useState<Accion>(null);
   const [cargando, setCargando] = useState(true);
   const [referente, setReferente] = useState<string | null>(null);
-  const [moneda, setMoneda] = useState<Moneda>("pozo");
+  const [moneda, setMoneda] = useState<Moneda>(null);
   const [cotizacion, setCotizacion] = useState<Cotizacion | null>(null);
   /** El monto en XLM que Soroswap no pudo cotizar, para no insistir. */
   const [sinCotizacion, setSinCotizacion] = useState<bigint | null>(null);
@@ -186,27 +189,34 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
   // Cotización en vivo mientras se escribe un monto en XLM. Con espera, para
   // no pedirle una simulación al RPC por cada tecla. La cotización guardada
   // vale solo si es del monto que está escrito ahora; si no, se está pidiendo.
-  const entraXlm = moneda === "xlm" ? aStroops(monto) : null;
+  const entrada = moneda ? (pozo?.entradas?.monedas.find((m) => m.simbolo === moneda) ?? null) : null;
+  const entraOtra = entrada ? aStroops(monto) : null;
   const cotizacionVigente =
-    entraXlm != null && entraXlm > 0n && cotizacion?.entra === entraXlm ? cotizacion : null;
+    entrada && entraOtra != null && entraOtra > 0n && cotizacion?.entra === entraOtra &&
+    cotizacion.moneda.simbolo === entrada.simbolo
+      ? cotizacion
+      : null;
   const cotizando =
-    entraXlm != null && entraXlm > 0n && !cotizacionVigente && sinCotizacion !== entraXlm;
+    entraOtra != null && entraOtra > 0n && !cotizacionVigente && sinCotizacion !== entraOtra;
   useEffect(() => {
-    if (!pozo || !yo || entraXlm == null || entraXlm <= 0n) return;
+    if (!pozo || !yo || !entrada || entraOtra == null || entraOtra <= 0n) return;
     let vigente = true;
     const t = setTimeout(async () => {
       try {
-        const c = await cotizar(pozo, yo, entraXlm);
+        const c = await cotizar(pozo, yo, entrada, entraOtra);
         if (vigente) setCotizacion(c);
       } catch {
-        if (vigente) setSinCotizacion(entraXlm);
+        if (vigente) setSinCotizacion(entraOtra);
       }
     }, 400);
     return () => {
       vigente = false;
       clearTimeout(t);
     };
-  }, [pozo, entraXlm, yo]);
+  }, [pozo, entrada, entraOtra, yo]);
+
+  /** Lo que la wallet tiene de la moneda de entrada elegida. */
+  const saldoEntrada = entrada && billetera ? billetera.entradas[entrada.simbolo] : null;
 
   async function correr(cual: Exclude<Accion, null>, fn: () => Promise<void>) {
     setAccion(cual);
@@ -404,63 +414,73 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                   <div className="mt-2 flex gap-2">
                     <input
                       inputMode="decimal"
-                      placeholder={`Monto en ${moneda === "xlm" ? "XLM" : pozo.simbolo}`}
+                      placeholder={`Monto en ${entrada ? entrada.simbolo : pozo.simbolo}`}
                       value={monto}
                       onChange={(e) => setMonto(e.target.value)}
                       className="input-monto flex-1"
                     />
-                    {pozo.entradaXlm && (
+                    {pozo.entradas && (
                       <div className="flex gap-1" role="radiogroup" aria-label="Pagar con">
-                        {(["pozo", "xlm"] as const).map((m) => (
+                        {[null, ...pozo.entradas.monedas.map((m) => m.simbolo)].map((m) => (
                           <button
-                            key={m}
+                            key={m ?? pozo.simbolo}
                             role="radio"
                             aria-checked={moneda === m}
                             className={`btn btn-blanco ${moneda === m ? "seleccionado" : ""}`}
                             onClick={() => setMoneda(m)}
                             disabled={accion !== null}
                           >
-                            {m === "xlm" ? "XLM" : pozo.simbolo}
+                            {m ?? pozo.simbolo}
                           </button>
                         ))}
                       </div>
                     )}
                   </div>
-                  {moneda === "xlm" && (
+                  {entrada && (
                     <p className="mt-2 text-xs text-tenue">
-                      {cotizacionVigente ? (
+                      {saldoEntrada && !saldoEntrada.trustline ? (
+                        `Tu wallet no tiene ${entrada.simbolo}. Conseguí un poco en Freighter o Lobstr y volvé.`
+                      ) : cotizacionVigente ? (
                         <>
-                          Tus {aTexto(cotizacionVigente.entra)} XLM son{" "}
+                          Tus {aTexto(cotizacionVigente.entra)} {entrada.simbolo} son{" "}
                           <span className="cifra font-bold text-foreground">
                             ≈ {aTexto(cotizacionVigente.sale, 2)} {pozo.simbolo}
                           </span>{" "}
-                          hoy en Soroswap. Se cambian en tu wallet y entra el {pozo.simbolo}: tu
-                          capital queda en dólares desde el primer segundo.
+                          hoy en Soroswap
+                          {cotizacionVigente.camino.length > 2 && " (pasando por XLM)"}. Se cambian
+                          en tu wallet y entra el {pozo.simbolo}: tu capital queda en dólares desde
+                          el primer segundo.
+                          {saldoEntrada && ` Tenés ${aTexto(saldoEntrada.saldo)} ${entrada.simbolo}.`}
                         </>
                       ) : cotizando ? (
                         "Cotizando en Soroswap…"
-                      ) : sinCotizacion != null && sinCotizacion === entraXlm ? (
+                      ) : sinCotizacion != null && sinCotizacion === entraOtra ? (
                         "Soroswap no cotiza ese monto. Probá con otro."
                       ) : (
-                        `Poné un monto en XLM y te digo cuánto ${pozo.simbolo} es hoy.`
+                        `Poné un monto en ${entrada.simbolo} y te digo cuánto ${pozo.simbolo} es hoy.` +
+                        (saldoEntrada ? ` Tenés ${aTexto(saldoEntrada.saldo)}.` : "")
                       )}
                     </p>
                   )}
                   <div className="mt-3 grid grid-cols-2 gap-2">
-                    {moneda === "xlm" ? (
+                    {entrada ? (
                       <Boton
                         onClick={() =>
                           correr("cambiar", async () => {
                             const entra = montoValido();
                             if (entra == null) return;
-                            if (billetera && entra > billetera.xlm - RESERVA_XLM) {
+                            if (!entrada.activo && billetera && entra > billetera.xlm - RESERVA_XLM) {
                               setError(
                                 `Tenés ${aTexto(billetera.xlm)} XLM. Dejá al menos 1,5 XLM para la reserva de Stellar y las fees.`,
                               );
                               return;
                             }
+                            if (entrada.activo && saldoEntrada && entra > saldoEntrada.saldo) {
+                              setError(`Tenés ${aTexto(saldoEntrada.saldo)} ${entrada.simbolo} en la wallet, no más.`);
+                              return;
+                            }
                             // Cotización fresca al momento de firmar, no la de la pantalla.
-                            const c = await cotizar(pozo, yo, entra);
+                            const c = await cotizar(pozo, yo, entrada, entra);
                             setCotizacion(c);
                             if (vista.tope > 0n && vista.principal + c.sale > vista.tope) {
                               setError(
@@ -470,7 +490,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                             }
                             const recibido = await cambiar(pozo, yo, c, firmante);
                             setAviso(
-                              `✓ Cambiaste ${aTexto(entra)} XLM por ${aTexto(recibido)} ${pozo.simbolo}. Ahora firmá el depósito.`,
+                              `✓ Cambiaste ${aTexto(entra)} ${entrada.simbolo} por ${aTexto(recibido)} ${pozo.simbolo}. Ahora firmá el depósito.`,
                             );
                             let tx: string;
                             try {
@@ -489,14 +509,19 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                             }
                             setMonto("");
                             setAviso({
-                              texto: `✓ Cambiaste ${aTexto(entra)} XLM y depositaste ${aTexto(recibido)} ${pozo.simbolo}. Ya estás en el sorteo.`,
+                              texto: `✓ Cambiaste ${aTexto(entra)} ${entrada.simbolo} y depositaste ${aTexto(recibido)} ${pozo.simbolo}. Ya estás en el sorteo.`,
                               tx,
                             });
                             await refrescar(yo);
                           })
                         }
                         cargando={accion === "cambiar"}
-                        disabled={accion !== null || sinTrustline || !cotizacionVigente}
+                        disabled={
+                          accion !== null ||
+                          sinTrustline ||
+                          !cotizacionVigente ||
+                          (saldoEntrada != null && !saldoEntrada.trustline)
+                        }
                       >
                         Cambiar y depositar
                       </Boton>
@@ -546,7 +571,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                         })
                       }
                       cargando={accion === "retirar"}
-                      disabled={accion !== null || miSaldo === 0n || moneda === "xlm"}
+                      disabled={accion !== null || miSaldo === 0n || entrada != null}
                     >
                       Retirar
                     </Boton>
@@ -554,7 +579,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                   <p className="mt-3 text-xs text-tenue">
                     Retirás cuando quieras, sin penalidad, aunque haya un sorteo en curso. Tu
                     capital nunca está en juego.
-                    {moneda === "xlm" && ` Los retiros son siempre en ${pozo.simbolo}.`}
+                    {entrada && ` Los retiros son siempre en ${pozo.simbolo}.`}
                   </p>
                 </>
               ) : (

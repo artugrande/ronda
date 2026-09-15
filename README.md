@@ -133,8 +133,8 @@ cd web && SOLO_MIRAR=1 npm run keeper
   `CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD`. Es el pozo de la
   home. (El primer deploy, `CAR46DV7…UKQP`, era de XLM: Blend paga 0 % por XLM
   y el retiro chocaba con el redondeo del pool; quedó abandonado, vacío.)
-- ✅ Entrar pagando con XLM: la app cotiza y cambia en Soroswap, en la wallet
-  del usuario, y deposita el USDC que salió. El pozo no lo ve
+- ✅ Entrar pagando con XLM o USDT0: la app cotiza y cambia en Soroswap, en la
+  wallet del usuario, y deposita el USDC que salió. El pozo no lo ve
 
 ### Riesgos, sin maquillaje
 

@@ -1,38 +1,33 @@
 /**
- * Cuánto USDC da Soroswap hoy por una cantidad de XLM, con el mismo código
- * que usa la app para "pagar con XLM". Para probar la cotización sin wallet.
+ * Cuánto USDC da Soroswap hoy por una cantidad de XLM o USDT0, con el mismo
+ * código que usa la app para entrar con otra moneda. Para probar la
+ * cotización sin wallet.
  *
- *   npx tsx scripts/cotizar.ts G... 10        # 10 XLM, mainnet
+ *   npx tsx scripts/cotizar.ts G... 10          # 10 XLM, mainnet
+ *   npx tsx scripts/cotizar.ts G... 10 USDT0    # 10 USDT0
  *
  * La cuenta tiene que existir en mainnet: la simulación la usa de origen y
  * no firma ni gasta nada.
  */
 
-import { PASSPHRASE, RPC, SOROSWAP_ROUTER, XLM_SAC, type Pozo } from "../src/lib/config";
+import { PRINCIPAL } from "../src/lib/config";
 import { aStroops, aTexto } from "../src/lib/montos";
 import { cotizar } from "../src/lib/soroswap";
 
-const USDC_MAINNET = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75";
-
 async function main() {
-  const [cuenta, cuanto = "10"] = process.argv.slice(2);
+  const [cuenta, cuanto = "10", simbolo = "XLM"] = process.argv.slice(2);
   const entra = aStroops(cuanto);
-  if (!cuenta || entra == null || entra <= 0n) {
-    console.error("uso: npx tsx scripts/cotizar.ts G... [XLM]");
+  const p = PRINCIPAL;
+  const moneda = p?.entradas?.monedas.find((m) => m.simbolo === simbolo);
+  if (!cuenta || entra == null || entra <= 0n || !p || !moneda) {
+    console.error("uso: npx tsx scripts/cotizar.ts G... [monto] [XLM|USDT0]");
     process.exit(2);
   }
-  // Lo justo de un Pozo para cotizar: el resto no se usa.
-  const p = {
-    rpcUrl: RPC.mainnet,
-    passphrase: PASSPHRASE.mainnet,
-    token: USDC_MAINNET,
-    simbolo: "USDC",
-    entradaXlm: { router: SOROSWAP_ROUTER.mainnet, xlm: XLM_SAC.mainnet },
-  } as Pozo;
-  const c = await cotizar(p, cuenta, entra);
-  console.log(`${aTexto(c.entra)} XLM → ${aTexto(c.sale, 4)} USDC en Soroswap`);
-  console.log(`mínimo aceptado (0,5 % de slippage): ${aTexto(c.minimo, 4)} USDC`);
-  console.log(`precio: 1 XLM = ${(Number(c.sale) / Number(c.entra)).toFixed(4)} USDC`);
+  const c = await cotizar(p, cuenta, moneda, entra);
+  const via = c.camino.length > 2 ? " (pasando por XLM)" : " (par directo)";
+  console.log(`${aTexto(c.entra)} ${simbolo} → ${aTexto(c.sale, 4)} ${p.simbolo} en Soroswap${via}`);
+  console.log(`mínimo aceptado (0,5 % de slippage): ${aTexto(c.minimo, 4)} ${p.simbolo}`);
+  console.log(`precio: 1 ${simbolo} = ${(Number(c.sale) / Number(c.entra)).toFixed(4)} ${p.simbolo}`);
 }
 
 main().catch((e) => {

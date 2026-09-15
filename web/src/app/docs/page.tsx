@@ -439,21 +439,23 @@ export default function Docs() {
           contrato es el mismo con cualquier token que Blend acepte.
         </Faq>
         <Faq q="¿Va a haber un pozo de USDT0?">
-          Cuando Blend lo preste. El pozo no sabe qué token es: un pozo nuevo es una entrada
-          más en la configuración, con su token y su pool. USDT0 llegó a Stellar en septiembre
-          de 2026 y todavía no tiene reserva en ningún pool de Blend, así que hoy no generaría
-          premio. Lo mismo vale para PYUSD, que sí está en YieldBlox pero con muy poca liquidez.
+          Hoy podés entrar con USDT0 y se cambia a USDC en la puerta. Un pozo que guarde USDT0
+          directamente necesita que Blend lo preste, porque el premio sale de ahí. USDT0 llegó a
+          Stellar en septiembre de 2026 y todavía no tiene reserva en ningún pool de Blend. El
+          día que la tenga, es una entrada más en la configuración: el contrato no sabe qué
+          token es.
         </Faq>
         <Faq q="¿Necesito algo en la wallet para entrar?">
           USDC y un poco de XLM para las fees. Si tu wallet todavía no acepta USDC, la app te
           ofrece agregarlo con un toque: es la trustline de Stellar, una sola vez.
         </Faq>
-        <Faq q="¿Puedo entrar con XLM?">
-          Sí. Elegís XLM al lado del monto, la app te dice cuánto USDC es hoy en Soroswap, y
-          firmás dos veces: el cambio y el depósito. El cambio pasa por tu wallet, no por el
-          pozo: el pozo recibe USDC como siempre y tu capital queda en dólares desde el primer
-          segundo. Se acepta hasta 0,5 % menos que la cotización si el precio se mueve entre
-          que mirás y firmás. Los retiros son siempre en USDC.
+        <Faq q="¿Puedo entrar con XLM o con USDT0?">
+          Sí, con las dos. Elegís la moneda al lado del monto, la app te dice cuánto USDC es hoy
+          en Soroswap, y firmás dos veces: el cambio y el depósito. El cambio pasa por tu wallet,
+          no por el pozo: el pozo recibe USDC como siempre y tu capital queda en dólares desde
+          el primer segundo. Se acepta hasta 0,5 % menos que la cotización si el precio se mueve
+          entre que mirás y firmás. Con USDT0 la app cotiza el par directo y el camino por XLM,
+          y usa el que más da. Los retiros son siempre en USDC.
         </Faq>
         <Faq q="¿Puedo tener referidos sin poner plata?">
           Podés, pero no te suman: el bono de referidos vale como mucho la mitad de tu propio

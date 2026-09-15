@@ -29,6 +29,21 @@ export const PASSPHRASE_RED = PASSPHRASE[RED];
 
 export type ClavePozo = "principal" | "test";
 
+/** Una moneda con la que se puede entrar al pozo, cambiándola en Soroswap. */
+export type Entrada = {
+  simbolo: string;
+  /** Contract id (SAC). */
+  token: string;
+  /** Código e issuer, o `null` si es XLM nativo. Para saber si la wallet la tiene. */
+  activo: { code: string; issuer: string } | null;
+  /**
+   * Caminos posibles hasta el token del pozo, en orden de preferencia. Se
+   * cotizan todos y gana el que más da: un par directo puede tener menos
+   * liquidez que ir por XLM.
+   */
+  caminos: string[][];
+};
+
 export type Pozo = {
   clave: ClavePozo;
   /** Contract id. */
@@ -47,11 +62,11 @@ export type Pozo = {
   /** El pool de Blend v2 donde genera, para leer el APY. */
   blendPool: string;
   /**
-   * Cómo entrar pagando con XLM: el router de Soroswap y el SAC de XLM de la
-   * red. `null` si el pozo ya es de XLM. El swap pasa por la wallet del
-   * usuario, el pozo no lo ve: recibe el token de siempre.
+   * Con qué otras monedas se puede entrar: se cambian por el token del pozo
+   * en Soroswap, en la wallet del usuario, y el pozo recibe el token de
+   * siempre. `null` si no hay router o el pozo es de XLM.
    */
-  entradaXlm: { router: string; xlm: string } | null;
+  entradas: { router: string; monedas: Entrada[] } | null;
   nombre: string;
   /** Cómo se explica la duración de la ronda en la pantalla. */
   ritmo: string;
@@ -110,6 +125,35 @@ export const SOROSWAP_ROUTER: Record<Red, string> = {
   mainnet: "CAG5LRYQ5JVEUI5TEID72EYOVX44TTUJT5BQR2J6J77FH65PCCFAJDDH",
   testnet: "CCJUD55AG6W5HAI5LRVNKAE5WDP5XGZBUDS5WNTIVDU7O264UZZE7BRD",
 };
+/** USDT0 (Tether vía LayerZero) en mainnet, de soroswap/token-list. */
+export const USDT0_MAINNET = {
+  token: "CBSJZEIO5C7KC2SF3MKSNXXJSW5G3VTNBX4ATMKUI3B2MR4JKM4R26YF",
+  activo: { code: "USDT0", issuer: "GATISXX6BZ6NC7IKQBY37CJD4SOZL3CYZJWXEDG6JVIY4WBS6KXJHN6Q" },
+};
+
+/**
+ * Las monedas de entrada del pozo de USDC en mainnet: XLM (par directo con
+ * USDC) y USDT0 (directo, o por XLM si el par directo da menos). En testnet
+ * el pozo es de XLM y no hay nada que cambiar.
+ */
+function entradasDe(red: Red): Pozo["entradas"] {
+  const t = TOKEN[red];
+  if (!t.activo) return null;
+  const xlm = XLM_SAC[red];
+  const monedas: Entrada[] = [{ simbolo: "XLM", token: xlm, activo: null, caminos: [[xlm, t.id]] }];
+  if (red === "mainnet") {
+    monedas.push({
+      simbolo: "USDT0",
+      token: USDT0_MAINNET.token,
+      activo: USDT0_MAINNET.activo,
+      caminos: [
+        [USDT0_MAINNET.token, t.id],
+        [USDT0_MAINNET.token, xlm, t.id],
+      ],
+    });
+  }
+  return { router: SOROSWAP_ROUTER[red], monedas };
+}
 
 function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
   if (!id) return null;
@@ -125,7 +169,7 @@ function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
     activo: TOKEN[red].activo,
     horizon: HORIZON[red],
     blendPool: BLEND_POOL[red],
-    entradaXlm: TOKEN[red].activo ? { router: SOROSWAP_ROUTER[red], xlm: XLM_SAC[red] } : null,
+    entradas: entradasDe(red),
     nombre: principal ? "Zorrito" : "Pozo de prueba",
     ritmo: principal
       ? "Se sortea una vez por semana"
