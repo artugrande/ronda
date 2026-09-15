@@ -5,7 +5,7 @@
 uno de los participantes se lleva el rendimiento de todos. El capital de cada
 uno queda intacto y se retira cuando se quiera.
 
-**App:** https://zorritostellar.vercel.app · **Docs:** https://zorritostellar.vercel.app/docs
+**App:** https://stellar.zorrito.app · **Docs:** https://stellar.zorrito.app/docs
 **Repo:** https://github.com/artugrande/zorrito
 
 > Este repo arrancó como una ronda rotativa (la vaquita). Ese producto quedó

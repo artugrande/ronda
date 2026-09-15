@@ -102,7 +102,7 @@ cd web && SOLO_MIRAR=1 npm run keeper
   Rondas de 10 min, con racha y referidos. Los depósitos atraviesan las tres
   autorizaciones anidadas y el pool paga interés real. El anterior
   (`CCAM3QUE…HWHRZ`, sin racha) sorteó decenas de rondas y sigue vivo
-- ✅ **App en https://zorritostellar.vercel.app**, con el estilo de Zorrito:
+- ✅ **App en https://stellar.zorrito.app**, con el estilo de Zorrito:
   pestañas por pozo (semanal y demo), premio con countdown, APY de Blend, tu
   posición, depositar y retirar, últimos ganadores leídos de los eventos, y
   `/docs` con cómo está hecho, el azar, Blend, contratos y riesgos. La ronda

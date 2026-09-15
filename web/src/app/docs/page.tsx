@@ -235,7 +235,7 @@ export default function Docs() {
           El pozo de la home corre en mainnet con rondas semanales. Para ver el ciclo entero en
           minutos hay un <strong>pozo de prueba en testnet</strong>, con rondas de 10 minutos y
           XLM de prueba:{" "}
-          {test ? <Link href="/test">zorritostellar.vercel.app/test</Link> : <em>en deploy</em>}.
+          {test ? <Link href="/test">stellar.zorrito.app/test</Link> : <em>en deploy</em>}.
           Es el mismo contrato, el mismo Blend (su pool de testnet) y el mismo drand. XLM de
           testnet gratis en{" "}
           <a href="https://laboratory.stellar.org/#account-creator?network=test" target="_blank" rel="noopener">

@@ -16,6 +16,7 @@ export const metadata: Metadata = {
   title: "Zorrito",
   description: DESCRIPCION,
   icons: { icon: "/assets/zorritofinallogo.png" },
+  metadataBase: new URL("https://stellar.zorrito.app"),
   openGraph: {
     title: "Zorrito — Ahorrá. Nadie pierde. Uno gana el rendimiento.",
     description: DESCRIPCION,
