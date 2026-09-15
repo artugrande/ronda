@@ -29,6 +29,7 @@ import { cambiar, cotizar, dondeCambia, type Cotizacion } from "@/lib/cambio";
 import { Marco } from "@/components/Marco";
 import { BotonWallet } from "@/components/Wallet";
 import { Boton, Etiqueta, Panel, corta, explorer } from "@/components/ui";
+import { IconoMoneda } from "@/components/Logos";
 
 type Accion = null | "depositar" | "cambiar" | "retirar" | "conectar" | "racha" | "trustline";
 
@@ -109,6 +110,8 @@ function leerReferente(): string | null {
 export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "test" }) {
   const [yo, setYo] = useState<string | null>(null);
   const [vista, setVista] = useState<Vista | null>(null);
+  /** Cuándo se leyó `vista`, en ms: el premio en pantalla crece desde ahí. */
+  const [leidoEn, setLeidoEn] = useState(0);
   const [revela, setRevela] = useState<number | null>(null);
   const [lista, setLista] = useState<Ganador[] | null>(null);
   const [tasa, setTasa] = useState<TasaBlend | null>(null);
@@ -145,6 +148,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
           direccion ? estadoBilletera(pozo, direccion).catch(() => null) : Promise.resolve(null),
         ]);
         setVista(v);
+        setLeidoEn(Date.now());
         setMiSaldo(s);
         setMisChances(ch);
         setCuenta(c);
@@ -158,6 +162,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
           if (await empujarKeeper(pozo.id)) {
             const v2 = await estado(pozo);
             setVista(v2);
+            setLeidoEn(Date.now());
             setRevela(await ganadorSeConoceEn(pozo, v2));
             ganadores(pozo).then(setLista).catch(() => {});
           }
@@ -310,7 +315,14 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
       {vista && pozo && (
         <div className="grid gap-4 md:grid-cols-2 md:items-start">
           <div className="flex flex-col gap-4">
-            <Premio vista={vista} ahora={ahora} revela={revela} simbolo={pozo.simbolo} />
+            <Premio
+              vista={vista}
+              ahora={ahora}
+              revela={revela}
+              simbolo={pozo.simbolo}
+              tasa={tasa}
+              leidoEn={leidoEn}
+            />
             <Cifras vista={vista} tasa={tasa} simbolo={pozo.simbolo} />
             {yo && (
               <Racha
@@ -426,10 +438,11 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                             key={m ?? pozo.simbolo}
                             role="radio"
                             aria-checked={moneda === m}
-                            className={`btn btn-blanco ${moneda === m ? "seleccionado" : ""}`}
+                            className={`btn btn-blanco btn-moneda ${moneda === m ? "seleccionado" : ""}`}
                             onClick={() => setMoneda(m)}
                             disabled={accion !== null}
                           >
+                            <IconoMoneda simbolo={m ?? pozo.simbolo} alto={16} />
                             {m ?? pozo.simbolo}
                           </button>
                         ))}
@@ -603,18 +616,50 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
   );
 }
 
+/** Milisegundos desde epoch, refrescados varias veces por segundo. Para lo que se ve crecer. */
+function useAhoraMs(cadaMs: number): number {
+  const [ms, setMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setMs(Date.now()), cadaMs);
+    return () => clearInterval(t);
+  }, [cadaMs]);
+  return ms;
+}
+
+const SEGUNDOS_ANIO = 365.25 * 86400;
+
+/**
+ * El premio como se ve crecer: lo que dijo el contrato al leerlo, más lo que
+ * el capital genera desde entonces a la tasa de Blend. Es una estimación
+ * entre lecturas (cada 20 s se vuelve a leer y se corrige); el contrato es
+ * la verdad. Congelado si el sorteo está pendiente: ese premio ya no cambia.
+ */
+function premioEnVivo(vista: Vista, tasa: TasaBlend | null, leidoEn: number, ahoraMs: number): bigint {
+  if (vista.sorteoPendiente || !tasa || vista.principal <= 0n || leidoEn <= 0) return vista.premio;
+  const segundos = Math.max(0, (ahoraMs - leidoEn) / 1000);
+  const crecio = Number(vista.principal) * tasa.apy * (segundos / SEGUNDOS_ANIO);
+  return vista.premio + BigInt(Math.floor(crecio));
+}
+
 function Premio({
   vista,
   ahora,
   revela,
   simbolo,
+  tasa,
+  leidoEn,
 }: {
   vista: Vista;
   ahora: number;
   revela: number | null;
   simbolo: string;
+  tasa: TasaBlend | null;
+  leidoEn: number;
 }) {
   const faltan = Number(vista.cierraAt) - ahora;
+  const ahoraMs = useAhoraMs(200);
+  const premio = premioEnVivo(vista, tasa, leidoEn, ahoraMs);
+  const enVivo = !vista.sorteoPendiente && tasa != null && vista.principal > 0n;
 
   let etiqueta: string;
   let reloj: string;
@@ -638,17 +683,22 @@ function Premio({
   } else {
     etiqueta = "Se sortea en";
     reloj = duracion(faltan);
-    nota = "Cuando llega a cero, el rendimiento se congela y uno se lo lleva.";
+    nota = enVivo
+      ? "El premio crece segundo a segundo con el interés de Blend. Cuando el reloj llega a cero, se congela y uno se lo lleva."
+      : "Cuando llega a cero, el rendimiento se congela y uno se lo lleva.";
     pill = { texto: `Ronda ${vista.ronda} en curso`, tono: "neutro" };
   }
 
   return (
     <Panel titulo={<>🏆 {vista.sorteoPendiente ? "Premio de la ronda" : "Premio en juego"}</>}>
-      <div className="flex items-baseline gap-2">
-        <span className="premio-grande cifra">
-          {vista.premio < 100_000n ? aTexto(vista.premio, 7) : aTexto(vista.premio, 4)}
-        </span>
+      <div className="flex flex-wrap items-baseline gap-2">
+        <span className="premio-grande cifra">{aTexto(premio, enVivo ? 7 : 2)}</span>
         <span className="text-sm font-bold text-tenue">{simbolo}</span>
+        {enVivo && (
+          <span className="en-vivo" title="Crece con el interés de Blend, segundo a segundo">
+            <span className="en-vivo-punto" /> en vivo
+          </span>
+        )}
       </div>
       <div className="mb-3 mt-2">
         <Etiqueta tono={pill.tono}>{pill.texto}</Etiqueta>
@@ -929,15 +979,17 @@ scripts/desplegar-mainnet.sh           # mainnet
   );
 }
 
+/** "6d 23:59:58", "23:59:58" o "09:58": siempre con los segundos corriendo. */
 function duracion(segundos: number): string {
   const d = Math.floor(segundos / 86400);
   const h = Math.floor((segundos % 86400) / 3600);
   const m = Math.floor((segundos % 3600) / 60);
   const s = segundos % 60;
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s.toString().padStart(2, "0")}s`;
-  return `${s}s`;
+  const dos = (n: number) => n.toString().padStart(2, "0");
+  const hms = `${dos(h)}:${dos(m)}:${dos(s)}`;
+  if (d > 0) return `${d}d ${hms}`;
+  if (h > 0) return hms;
+  return `${dos(m)}:${dos(s)}`;
 }
 
 /**

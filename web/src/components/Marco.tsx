@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, type ReactNode } from "react";
 import { RED, type Red } from "@/lib/config";
+import { LogoBlend, LogoStellar } from "@/components/Logos";
 
 /**
  * El marco común de todas las páginas: logo flotando, header de vidrio con
@@ -67,18 +68,33 @@ export function Marco({
 
         <main className="flex w-full flex-1 flex-col gap-4">{children}</main>
 
-        <footer className="glass mt-10 flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center">
-          <span>Zorrito · Ahorro premiado sin pérdida de capital</span>
-          <span>·</span>
-          <Link href="/">App</Link>
-          <span>·</span>
-          <Link href="/docs">Cómo funciona</Link>
-          <span>·</span>
-          <a href="https://github.com/artugrande/zorrito" target="_blank" rel="noopener">
-            GitHub
-          </a>
-          <span>·</span>
-          <span className="pill pill-neutro">Stellar {red}</span>
+        <footer className="glass mt-10 flex w-full flex-col items-center gap-2 text-center">
+          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+            <span>Zorrito · Ahorro premiado sin pérdida de capital</span>
+            <span>·</span>
+            <Link href="/">App</Link>
+            <span>·</span>
+            <Link href="/docs">Cómo funciona</Link>
+            <span>·</span>
+            <a href="https://github.com/artugrande/zorrito" target="_blank" rel="noopener">
+              GitHub
+            </a>
+          </div>
+          <div className="marcas">
+            <span className="marca">
+              <LogoStellar alto={16} />
+              <span className="marca-red">{red}</span>
+            </span>
+            <span className="marca-sep">·</span>
+            <span className="marca-texto">Powered by</span>
+            <a className="marca" href="https://blend.capital" target="_blank" rel="noopener">
+              <LogoBlend alto={18} /> Blend
+            </a>
+            <a className="marca" href="https://soroswap.finance" target="_blank" rel="noopener">
+              Soroswap
+            </a>
+            <span className="marca">DEX de Stellar</span>
+          </div>
         </footer>
       </div>
     </div>

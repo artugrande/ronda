@@ -585,6 +585,65 @@ body.docs-page footer.glass a {
   color: var(--green);
 }
 
+/* Marcas del footer: red y "powered by". El logo de Stellar va en currentColor:
+   blanco sobre el paisaje, gris sobre las docs. */
+.marcas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  font-size: 0.74rem;
+}
+.marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+footer.glass a.marca {
+  text-decoration: none;
+}
+.marca-red {
+  text-transform: capitalize;
+  opacity: 0.85;
+}
+.marca-texto {
+  opacity: 0.75;
+  font-weight: 500;
+}
+.marca-sep {
+  opacity: 0.6;
+}
+
+/* Botones de moneda con ícono */
+.btn-moneda {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  padding-right: 12px;
+}
+
+/* "en vivo": el premio crece a la vista */
+.en-vivo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.en-vivo-punto {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
 /* ── Docs ─────────────────────────────────────────────────────────────── */
 .docs h1 {
   font-size: 2rem;
