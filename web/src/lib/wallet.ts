@@ -34,7 +34,7 @@ function conLimite<T>(p: Promise<T>, ms: number, que: string): Promise<T> {
 }
 
 async function kit(red: Red = redActual): Promise<Kit> {
-  const { StellarWalletsKit, Networks } = await import(
+  const { StellarWalletsKit, Networks, SwkAppLightTheme } = await import(
     "@creit.tech/stellar-wallets-kit"
   );
   const network = red === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
@@ -50,6 +50,19 @@ async function kit(red: Red = redActual): Promise<Kit> {
     StellarWalletsKit.init({
       network,
       modules: [new FreighterModule(), new xBullModule(), new LobstrModule()],
+      // El modal con los colores de Zorrito. El kit pinta en el DOM de la
+      // página (no en shadow DOM) y sus divs de header y footer llevan la
+      // clase `glass`, igual que nuestro header: globals.css la aísla.
+      theme: {
+        ...SwkAppLightTheme,
+        background: "#ffffff",
+        "background-secondary": "#fff6ea",
+        primary: "#fd840e",
+        "primary-foreground": "#ffffff",
+        border: "rgba(253, 132, 14, 0.25)",
+        "border-radius": "16px",
+        "font-family": "var(--font-baloo), 'Baloo 2', system-ui, sans-serif",
+      },
     });
     iniciado = true;
     redActual = red;
