@@ -25,7 +25,7 @@ import { aStroops, aTexto } from "@/lib/montos";
 import { conectar, desconectar, direccionActual, firmar } from "@/lib/wallet";
 import { porcentaje, tasaBlend, type TasaBlend } from "@/lib/blend";
 import { agregarTrustline, estadoBilletera, type EstadoBilletera } from "@/lib/billetera";
-import { cambiar, cotizar, type Cotizacion } from "@/lib/soroswap";
+import { cambiar, cotizar, dondeCambia, type Cotizacion } from "@/lib/cambio";
 import { Marco } from "@/components/Marco";
 import { BotonWallet } from "@/components/Wallet";
 import { Boton, Etiqueta, Panel, corta, explorer } from "@/components/ui";
@@ -34,7 +34,7 @@ type Accion = null | "depositar" | "cambiar" | "retirar" | "conectar" | "racha" 
 
 /**
  * Con qué paga el usuario: `null` es el token del pozo; si no, el símbolo de
- * una moneda de entrada (XLM, USDT0) que se cambia en Soroswap.
+ * una moneda de entrada (XLM, USDT0) que se cambia en Soroswap o en el DEX.
  */
 type Moneda = string | null;
 
@@ -128,7 +128,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
   const [referente, setReferente] = useState<string | null>(null);
   const [moneda, setMoneda] = useState<Moneda>(null);
   const [cotizacion, setCotizacion] = useState<Cotizacion | null>(null);
-  /** El monto en XLM que Soroswap no pudo cotizar, para no insistir. */
+  /** El monto que nadie pudo cotizar, para no insistir. */
   const [sinCotizacion, setSinCotizacion] = useState<bigint | null>(null);
   const ahora = useAhora();
   const ultimoEmpujon = useRef(0);
@@ -446,16 +446,15 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                           <span className="cifra font-bold text-foreground">
                             ≈ {aTexto(cotizacionVigente.sale, 2)} {pozo.simbolo}
                           </span>{" "}
-                          hoy en Soroswap
-                          {cotizacionVigente.camino.length > 2 && " (pasando por XLM)"}. Se cambian
+                          hoy en {dondeCambia(cotizacionVigente)}, el que más da ahora. Se cambian
                           en tu wallet y entra el {pozo.simbolo}: tu capital queda en dólares desde
                           el primer segundo.
                           {saldoEntrada && ` Tenés ${aTexto(saldoEntrada.saldo)} ${entrada.simbolo}.`}
                         </>
                       ) : cotizando ? (
-                        "Cotizando en Soroswap…"
+                        "Cotizando en Soroswap y en el DEX de Stellar…"
                       ) : sinCotizacion != null && sinCotizacion === entraOtra ? (
-                        "Soroswap no cotiza ese monto. Probá con otro."
+                        "No hay cotización para ese monto ahora. Probá con otro."
                       ) : (
                         `Poné un monto en ${entrada.simbolo} y te digo cuánto ${pozo.simbolo} es hoy.` +
                         (saldoEntrada ? ` Tenés ${aTexto(saldoEntrada.saldo)}.` : "")
@@ -1012,9 +1011,12 @@ function mensaje(e: unknown): Mensaje {
   const codigo = /Error\(Contract, (#\d+)\)/.exec(crudo)?.[1];
   if (codigo && pozo[codigo]) return con(pozo[codigo]);
 
-  // Soroswap
-  if (crudo.includes("Soroswap")) {
-    return con("Soroswap no pudo cotizar ese monto ahora. Probá con otro monto o en un rato.");
+  // Cambio
+  if (crudo.includes("nadie cotiza")) {
+    return con("No hay cotización para ese monto ahora, ni en Soroswap ni en el DEX. Probá con otro monto o en un rato.");
+  }
+  if (crudo.includes("op_under_dest_min") || crudo.includes("op_too_few_offers")) {
+    return con("El precio se movió más de lo aceptado entre la cotización y la firma. No se cambió nada: probá de nuevo.");
   }
   if (crudo.includes("deadline") || crudo.includes("Deadline")) {
     return con("Tardaste más de diez minutos en firmar y la cotización venció. Probá de nuevo.");

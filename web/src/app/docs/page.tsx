@@ -450,12 +450,13 @@ export default function Docs() {
           ofrece agregarlo con un toque: es la trustline de Stellar, una sola vez.
         </Faq>
         <Faq q="¿Puedo entrar con XLM o con USDT0?">
-          Sí, con las dos. Elegís la moneda al lado del monto, la app te dice cuánto USDC es hoy
-          en Soroswap, y firmás dos veces: el cambio y el depósito. El cambio pasa por tu wallet,
-          no por el pozo: el pozo recibe USDC como siempre y tu capital queda en dólares desde
-          el primer segundo. Se acepta hasta 0,5 % menos que la cotización si el precio se mueve
-          entre que mirás y firmás. Con USDT0 la app cotiza el par directo y el camino por XLM,
-          y usa el que más da. Los retiros son siempre en USDC.
+          Sí, con las dos. Elegís la moneda al lado del monto, la app cotiza en los dos lugares
+          donde se cambia en Stellar, Soroswap y el DEX clásico (el mismo que usan Freighter y
+          Lobstr), y te muestra el que más USDC da en ese momento. Firmás dos veces: el cambio y
+          el depósito. El cambio pasa por tu wallet, no por el pozo: el pozo recibe USDC como
+          siempre y tu capital queda en dólares desde el primer segundo. Se acepta hasta 0,5 %
+          menos que la cotización si el precio se mueve entre que mirás y firmás; si se mueve
+          más, el cambio falla entero y no pasa nada. Los retiros son siempre en USDC.
         </Faq>
         <Faq q="¿Puedo tener referidos sin poner plata?">
           Podés, pero no te suman: el bono de referidos vale como mucho la mitad de tu propio

@@ -29,7 +29,12 @@ export const PASSPHRASE_RED = PASSPHRASE[RED];
 
 export type ClavePozo = "principal" | "test";
 
-/** Una moneda con la que se puede entrar al pozo, cambiándola en Soroswap. */
+/**
+ * Una moneda con la que se puede entrar al pozo, cambiándola por el token del
+ * pozo en la wallet del usuario. Se cotiza en las dos vías que hay, Soroswap
+ * (un contrato Soroban) y el DEX clásico de Stellar (un path payment, lo que
+ * usan Freighter y Lobstr), y se cambia por la que más da en ese momento.
+ */
 export type Entrada = {
   simbolo: string;
   /** Contract id (SAC). */
@@ -37,9 +42,9 @@ export type Entrada = {
   /** Código e issuer, o `null` si es XLM nativo. Para saber si la wallet la tiene. */
   activo: { code: string; issuer: string } | null;
   /**
-   * Caminos posibles hasta el token del pozo, en orden de preferencia. Se
-   * cotizan todos y gana el que más da: un par directo puede tener menos
-   * liquidez que ir por XLM.
+   * Caminos posibles en Soroswap hasta el token del pozo (directo, por XLM).
+   * El DEX clásico encuentra el camino solo. Un camino sin par no cotiza y
+   * queda afuera de la comparación.
    */
   caminos: string[][];
 };
@@ -132,20 +137,18 @@ export const USDT0_MAINNET = {
 };
 
 /**
- * Las monedas de entrada del pozo de USDC en mainnet: XLM (par directo con
- * USDC) y USDT0 (directo, o por XLM si el par directo da menos). En testnet
- * el pozo es de XLM y no hay nada que cambiar.
+ * Las monedas de entrada del pozo de USDC en mainnet: XLM y USDT0. Las dos
+ * se cotizan en Soroswap y en el DEX clásico. Hoy (15/09/2026) XLM tiene par
+ * en los dos lados y USDT0 solo en el DEX: Soroswap lo lista pero no tiene
+ * par, y entra a la comparación solo cuando aparezca. En testnet el pozo es
+ * de XLM y no hay nada que cambiar.
  */
 function entradasDe(red: Red): Pozo["entradas"] {
   const t = TOKEN[red];
   if (!t.activo) return null;
   const xlm = XLM_SAC[red];
   const monedas: Entrada[] = [{ simbolo: "XLM", token: xlm, activo: null, caminos: [[xlm, t.id]] }];
-  // Soroswap todavía no tiene par de USDT0 (verificado el 15/09/2026: ni
-  // directo con USDC ni por XLM). La opción queda apagada hasta que aparezca
-  // liquidez ahí o se sume otra vía de cambio.
-  const USDT0_HABILITADO = false;
-  if (red === "mainnet" && USDT0_HABILITADO) {
+  if (red === "mainnet") {
     monedas.push({
       simbolo: "USDT0",
       token: USDT0_MAINNET.token,

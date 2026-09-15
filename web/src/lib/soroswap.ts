@@ -26,19 +26,17 @@ import {
 import type { Entrada, Pozo } from "./config";
 import { addr, i128, invocarConRetorno, servidorDe, u64, vecAddr, type Firmante } from "./contrato";
 
-/** Cuánto menos que la cotización se acepta recibir, en puntos básicos. */
-export const SLIPPAGE_BPS = 50n;
+import { SLIPPAGE_BPS } from "./cambio";
+
 /** Segundos que la wallet tiene para firmar antes de que el router rechace el swap. */
 const PLAZO_S = 600;
 
-export type Cotizacion = {
-  /** Con qué se paga. */
+/** Una cotización de Soroswap: el camino que más da y cuánto da. */
+export type CotizacionSoroswap = {
+  via: "soroswap";
   moneda: Entrada;
-  /** Lo que entra, en stroops de la moneda. */
   entra: bigint;
-  /** Token del pozo que sale hoy, en stroops. */
   sale: bigint;
-  /** Lo mínimo que se acepta recibir: `sale` menos el slippage. */
   minimo: bigint;
   /** El camino que más da, del token de entrada al del pozo. */
   camino: string[];
@@ -70,12 +68,12 @@ async function cotizarCamino(
 }
 
 /** Cuánto del token del pozo da Soroswap hoy por `entra` de `moneda`. */
-export async function cotizar(
+export async function cotizarSoroswap(
   p: Pozo,
   usuario: string,
   moneda: Entrada,
   entra: bigint,
-): Promise<Cotizacion> {
+): Promise<CotizacionSoroswap> {
   const servidor = servidorDe(p.rpcUrl);
   const c = await servidor.getAccount(usuario);
   const cuenta = new Account(c.accountId(), c.sequenceNumber());
@@ -90,6 +88,7 @@ export async function cotizar(
     .sort((a, b) => (a.sale > b.sale ? -1 : a.sale < b.sale ? 1 : 0))[0];
   if (!mejor) throw new Error(`Soroswap no cotiza ${moneda.simbolo} → ${p.simbolo}`);
   return {
+    via: "soroswap",
     moneda,
     entra,
     sale: mejor.sale,
@@ -103,10 +102,10 @@ export async function cotizar(
  * recibió, en stroops. Si el RPC no trae el valor de retorno, devuelve el
  * mínimo aceptado: lo que seguro está en la wallet.
  */
-export async function cambiar(
+export async function cambiarSoroswap(
   p: Pozo,
   usuario: string,
-  c: Cotizacion,
+  c: CotizacionSoroswap,
   firmar: Firmante,
 ): Promise<bigint> {
   const plazo = BigInt(Math.floor(Date.now() / 1000) + PLAZO_S);

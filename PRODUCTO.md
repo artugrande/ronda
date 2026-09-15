@@ -100,12 +100,13 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
   USDC del pool Fixed de Blend v2 (~8 % anual; XLM ahí paga 0 %). Pozo de
   prueba en testnet (`/test`) en XLM con rondas de 10 minutos.
 
-- Entrar pagando con XLM o con USDT0: la app cotiza en Soroswap (par directo
-  o pasando por XLM, el que más da), cambia en la wallet del usuario y
-  deposita lo que salió. Dos firmas. El pozo no lo ve: recibe USDC como
-  siempre, y la garantía de no perder capital no cambia. USDT0 es el USDT de
-  Tether en Stellar desde septiembre de 2026; el que ya lo tiene entra sin
-  pasar por un exchange.
+- Entrar pagando con XLM o con USDT0: la app cotiza a la vez en Soroswap y
+  en el DEX clásico de Stellar (path payment, lo que usan Freighter y
+  Lobstr), cambia por el que más da en la wallet del usuario y deposita lo
+  que salió. Dos firmas. El pozo no lo ve: recibe USDC como siempre, y la
+  garantía de no perder capital no cambia. USDT0 es el USDT de Tether en
+  Stellar desde septiembre de 2026; hoy solo el DEX lo cambia (10 USDT0 →
+  9,9955 USDC), y Soroswap entra a la comparación cuando tenga el par.
 
 - Probado en mainnet con Freighter, con plata real: cambio de XLM a USDC
   por Soroswap, depósito en Blend y retiro completo, todo desde la app.
