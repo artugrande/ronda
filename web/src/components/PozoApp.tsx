@@ -28,12 +28,15 @@ import { agregarTrustline, estadoBilletera, type EstadoBilletera } from "@/lib/b
 import { cambiar, cotizar, type Cotizacion } from "@/lib/soroswap";
 import { Marco } from "@/components/Marco";
 import { BotonWallet } from "@/components/Wallet";
-import { Boton, Error as Aviso, Etiqueta, Panel, corta, explorer } from "@/components/ui";
+import { Boton, Etiqueta, Panel, corta, explorer } from "@/components/ui";
 
 type Accion = null | "depositar" | "cambiar" | "retirar" | "conectar" | "racha" | "trustline";
 
 /** Con qué paga el usuario: el token del pozo, o XLM que se cambia en Soroswap. */
 type Moneda = "pozo" | "xlm";
+
+/** Un cartel de estado: qué pasó, en lenguaje normal, y opcionalmente la transacción o el detalle técnico. */
+type Mensaje = { texto: string; tx?: string; detalle?: string };
 
 /** XLM que hay que dejar en la wallet: la reserva de Stellar más fees. */
 const RESERVA_XLM = 15_000_000n;
@@ -111,8 +114,12 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
   const [miSaldo, setMiSaldo] = useState<bigint>(0n);
   const [misChances, setMisChances] = useState<number>(0);
   const [monto, setMonto] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
+  const [error, setErrorCrudo] = useState<Mensaje | null>(null);
+  const [aviso, setAvisoCrudo] = useState<Mensaje | null>(null);
+  const setError = (m: string | Mensaje | null) =>
+    setErrorCrudo(typeof m === "string" ? { texto: m } : m);
+  const setAviso = (m: string | Mensaje | null) =>
+    setAvisoCrudo(typeof m === "string" ? { texto: m } : m);
   const [accion, setAccion] = useState<Accion>(null);
   const [cargando, setCargando] = useState(true);
   const [referente, setReferente] = useState<string | null>(null);
@@ -285,8 +292,8 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
         </div>
       )}
 
-      {error && <Aviso>{error}</Aviso>}
-      {aviso && <div className="aviso aviso-verde">{aviso}</div>}
+      {error && <Cartel m={error} tono="rojo" red={pozo?.red} />}
+      {aviso && <Cartel m={aviso} tono="verde" red={pozo?.red} />}
 
       {pozo && cargando && !vista && <p className="header-tagline text-center">Leyendo el pozo…</p>}
 
@@ -305,9 +312,9 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                 deshabilitado={accion !== null}
                 onMarcar={() =>
                   correr("racha", async () => {
-                    await ahorrarHoy(pozo, yo, firmante);
+                    const tx = await ahorrarHoy(pozo, yo, firmante);
                     await refrescar(yo);
-                    setAviso("🔥 Racha marcada. Mañana suma más.");
+                    setAviso({ texto: "🔥 Racha marcada. Mañana suma más.", tx });
                   })
                 }
               />
@@ -357,9 +364,9 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                         <Boton
                           onClick={() =>
                             correr("trustline", async () => {
-                              await agregarTrustline(pozo, yo, firmante);
+                              const tx = await agregarTrustline(pozo, yo, firmante);
                               await refrescar(yo);
-                              setAviso(`✓ Tu wallet ya acepta ${pozo.simbolo}.`);
+                              setAviso({ texto: `✓ Tu wallet ya acepta ${pozo.simbolo}.`, tx });
                             })
                           }
                           cargando={accion === "trustline"}
@@ -465,13 +472,26 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                             setAviso(
                               `✓ Cambiaste ${aTexto(entra)} XLM por ${aTexto(recibido)} ${pozo.simbolo}. Ahora firmá el depósito.`,
                             );
-                            if (referenteAplica) {
-                              await depositarConReferente(pozo, yo, recibido, referente!, firmante);
-                            } else {
-                              await depositar(pozo, yo, recibido, firmante);
+                            let tx: string;
+                            try {
+                              tx = referenteAplica
+                                ? await depositarConReferente(pozo, yo, recibido, referente!, firmante)
+                                : await depositar(pozo, yo, recibido, firmante);
+                            } catch (e) {
+                              // El cambio ya está hecho: que el error no diga que no pasó nada.
+                              const m = mensaje(e);
+                              setAviso(null);
+                              setError({
+                                ...m,
+                                texto: `El cambio salió bien: tenés ${aTexto(recibido)} ${pozo.simbolo} en tu wallet. Lo que no se completó es el depósito. ${m.texto} Cuando lo resuelvas, elegí ${pozo.simbolo} y tocá Depositar.`,
+                              });
+                              return;
                             }
                             setMonto("");
-                            setAviso(`✓ ${aTexto(recibido)} ${pozo.simbolo} en el pozo.`);
+                            setAviso({
+                              texto: `✓ Cambiaste ${aTexto(entra)} XLM y depositaste ${aTexto(recibido)} ${pozo.simbolo}. Ya estás en el sorteo.`,
+                              tx,
+                            });
                             await refrescar(yo);
                           })
                         }
@@ -492,12 +512,14 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                               );
                               return;
                             }
-                            if (referenteAplica) {
-                              await depositarConReferente(pozo, yo, m, referente!, firmante);
-                            } else {
-                              await depositar(pozo, yo, m, firmante);
-                            }
+                            const tx = referenteAplica
+                              ? await depositarConReferente(pozo, yo, m, referente!, firmante)
+                              : await depositar(pozo, yo, m, firmante);
                             setMonto("");
+                            setAviso({
+                              texto: `✓ Depositaste ${aTexto(m)} ${pozo.simbolo}. Ya estás en el sorteo, y tu capital sale cuando quieras.`,
+                              tx,
+                            });
                             await refrescar(yo);
                           })
                         }
@@ -517,8 +539,9 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                             setError(`Tenés ${aTexto(miSaldo)} ${pozo.simbolo} en el pozo, no más.`);
                             return;
                           }
-                          await retirar(pozo, yo, m, firmante);
+                          const tx = await retirar(pozo, yo, m, firmante);
                           setMonto("");
+                          setAviso({ texto: `✓ Retiraste ${aTexto(m)} ${pozo.simbolo}. Ya está en tu wallet.`, tx });
                           await refrescar(yo);
                         })
                       }
@@ -898,24 +921,87 @@ function duracion(segundos: number): string {
  * provocar se traducen; el resto se muestra tal cual, que es lo que sirve
  * para reportarlo.
  */
-function mensaje(e: unknown): string {
+function Cartel({ m, tono, red }: { m: Mensaje; tono: "verde" | "rojo"; red?: string }) {
+  return (
+    <div className={`aviso aviso-${tono}`} role={tono === "rojo" ? "alert" : "status"}>
+      {m.texto}
+      {m.tx && red && (
+        <>
+          {" "}
+          <a href={explorer(red, "tx", m.tx)} target="_blank" rel="noreferrer">
+            Ver transacción
+          </a>
+        </>
+      )}
+      {m.detalle && (
+        <details>
+          <summary>Detalle técnico</summary>
+          <p>{m.detalle}</p>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function mensaje(e: unknown): Mensaje {
   const crudo = e instanceof Error ? e.message : String(e);
+  const con = (texto: string): Mensaje => ({ texto, detalle: crudo });
+
+  // Wallet
+  if (crudo.includes("User declined") || crudo.includes("rejected")) {
+    return { texto: "Cancelaste la firma en la wallet. No pasó nada." };
+  }
+  if (crudo.includes("no respondió")) {
+    return con("La wallet no respondió. Fijate que esté abierta y en la red correcta, y probá de nuevo.");
+  }
+
+  // Saldo y fees
   if (crudo.includes("balance is not within the allowed range")) {
-    return "No te alcanza el saldo de la wallet para ese monto. Stellar además reserva 1 XLM que no se puede gastar.";
+    return con("No te alcanza el saldo de la wallet para ese monto. Stellar además reserva 1 XLM que no se puede gastar.");
   }
   if (crudo.includes("tx_insufficient_balance")) {
     // La red cobra el storage que crea la transacción. El primer depósito
     // del pozo arma el árbol del sorteo y paga su renta; los siguientes, no.
     const fee = /"fee_charged":"(\d+)"/.exec(crudo)?.[1];
-    const cuanto = fee ? `${aTexto(BigInt(fee), 2)} XLM` : "más XLM de lo que tenés libre";
-    return `La red pide ${cuanto} de fee para esta transacción y tu wallet no tiene tanto XLM libre (Stellar reserva 1,5 XLM). Mandale XLM y volvé a intentar. Si venías de un cambio, el USDC ya está en tu wallet: elegí USDC y tocá Depositar.`;
+    const cuanto = fee ? `${aTexto(BigInt(fee), 2)} XLM` : "más XLM del que tenés libre";
+    return con(
+      `La red pide ${cuanto} de fee para esta transacción y tu wallet no tiene tanto XLM libre (Stellar reserva 1,5 XLM). Mandale XLM y volvé a intentar. Si venías de un cambio, el USDC ya está en tu wallet: elegí USDC y tocá Depositar.`,
+    );
   }
-  if (crudo.includes("Error(Contract, #13)")) return "El pozo llegó a su tope de capital. Probá con menos.";
-  if (crudo.includes("Error(Contract, #14)")) return "Hoy ya marcaste la racha. Mañana suma más.";
-  if (crudo.includes("Error(Contract, #15)")) return "Para marcar la racha tenés que tener capital adentro.";
-  if (crudo.includes("Error(Contract, #16)")) return "Ese link de invitación no es válido.";
-  if (crudo.includes("Error(Contract, #3)")) return "Estás intentando retirar más de lo que tenés en el pozo.";
-  if (crudo.includes("no respondió")) return "La wallet no respondió. Fijate que esté abierta y en la red correcta.";
-  if (crudo.includes("User declined") || crudo.includes("rejected")) return "Cancelaste la firma en la wallet.";
-  return crudo;
+  if (crudo.includes("tx_insufficient_fee")) {
+    return con("La red está cargada y la fee no alcanzó. Esperá unos segundos y probá de nuevo.");
+  }
+
+  // Errores del pozo, por código
+  const pozo: Record<string, string> = {
+    "#2": "El monto tiene que ser mayor a cero.",
+    "#3": "Estás intentando retirar más de lo que tenés en el pozo.",
+    "#4": "El pozo está lleno.",
+    "#5": "Esa wallet no tiene capital en el pozo.",
+    "#13": "El pozo llegó a su tope de capital. Probá con menos.",
+    "#14": "Hoy ya marcaste la racha. Mañana suma más.",
+    "#15": "Para marcar la racha tenés que tener capital adentro.",
+    "#16": "Ese link de invitación no es válido: el que invita tiene que estar en el pozo.",
+    "#17": "El link de invitación solo cuenta en tu primer depósito.",
+  };
+  const codigo = /Error\(Contract, (#\d+)\)/.exec(crudo)?.[1];
+  if (codigo && pozo[codigo]) return con(pozo[codigo]);
+
+  // Soroswap
+  if (crudo.includes("Soroswap")) {
+    return con("Soroswap no pudo cotizar ese monto ahora. Probá con otro monto o en un rato.");
+  }
+  if (crudo.includes("deadline") || crudo.includes("Deadline")) {
+    return con("Tardaste más de diez minutos en firmar y la cotización venció. Probá de nuevo.");
+  }
+
+  // Red
+  if (crudo.includes("no entró") || crudo.includes("TRY_AGAIN_LATER")) {
+    return con("La transacción no llegó a entrar en la red. No se movió nada: probá de nuevo.");
+  }
+  if (crudo.includes("fetch") || crudo.includes("Failed to fetch") || crudo.includes("NetworkError")) {
+    return con("No pude hablar con la red de Stellar. Fijate tu conexión y probá de nuevo.");
+  }
+
+  return con("Algo salió mal y no se completó. No se movió nada de tu wallet. Probá de nuevo; si sigue, el detalle técnico ayuda a entender qué pasó.");
 }
