@@ -105,10 +105,14 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
   como siempre, y la garantía de no perder capital no cambia. Otros tokens
   (USDT0, cuando Blend lo preste) entran por el mismo camino.
 
+- Probado en mainnet con Freighter, con plata real: cambio de XLM a USDC
+  por Soroswap, depósito en Blend y retiro completo, todo desde la app.
+
 ### Pendiente antes de la submission
 
-- Prueba del flujo completo desde la app con Freighter.
 - Video de demo.
+- Capital inicial en el pozo para que el primer sorteo tenga un premio
+  visible.
 
 ### Fuera de alcance
 
