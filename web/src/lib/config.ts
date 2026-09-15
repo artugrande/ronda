@@ -46,6 +46,12 @@ export type Pozo = {
   horizon: string;
   /** El pool de Blend v2 donde genera, para leer el APY. */
   blendPool: string;
+  /**
+   * Cómo entrar pagando con XLM: el router de Soroswap y el SAC de XLM de la
+   * red. `null` si el pozo ya es de XLM. El swap pasa por la wallet del
+   * usuario, el pozo no lo ve: recibe el token de siempre.
+   */
+  entradaXlm: { router: string; xlm: string } | null;
   nombre: string;
   /** Cómo se explica la duración de la ronda en la pantalla. */
   ritmo: string;
@@ -94,6 +100,16 @@ export const HORIZON: Record<Red, string> = {
   mainnet: "https://horizon.stellar.org",
   testnet: "https://horizon-testnet.stellar.org",
 };
+/** SAC de XLM nativo, por red. */
+export const XLM_SAC: Record<Red, string> = {
+  mainnet: "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+  testnet: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+};
+/** Router de Soroswap, de soroswap/core public/{mainnet,testnet}.contracts.json. */
+export const SOROSWAP_ROUTER: Record<Red, string> = {
+  mainnet: "CAG5LRYQ5JVEUI5TEID72EYOVX44TTUJT5BQR2J6J77FH65PCCFAJDDH",
+  testnet: "CCJUD55AG6W5HAI5LRVNKAE5WDP5XGZBUDS5WNTIVDU7O264UZZE7BRD",
+};
 
 function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
   if (!id) return null;
@@ -109,6 +125,7 @@ function armar(clave: ClavePozo, red: Red, id: string): Pozo | null {
     activo: TOKEN[red].activo,
     horizon: HORIZON[red],
     blendPool: BLEND_POOL[red],
+    entradaXlm: TOKEN[red].activo ? { router: SOROSWAP_ROUTER[red], xlm: XLM_SAC[red] } : null,
     nombre: principal ? "Zorrito" : "Pozo de prueba",
     ritmo: principal
       ? "Se sortea una vez por semana"

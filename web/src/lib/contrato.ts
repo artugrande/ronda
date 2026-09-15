@@ -207,6 +207,21 @@ export async function invocarEn(
   firmar: Firmante,
   cx: Conexion = CONEXION_POR_DEFECTO,
 ): Promise<string> {
+  return (await invocarConRetorno(contratoId, fuente, metodo, args, firmar, cx)).hash;
+}
+
+/**
+ * El ciclo completo, y además lo que devolvió el contrato (para un swap, la
+ * cantidad recibida). `retorno` es `null` si el RPC no lo trajo.
+ */
+export async function invocarConRetorno(
+  contratoId: string,
+  fuente: string,
+  metodo: string,
+  args: xdr.ScVal[],
+  firmar: Firmante,
+  cx: Conexion = CONEXION_POR_DEFECTO,
+): Promise<{ hash: string; retorno: xdr.ScVal | null }> {
   const servidor = servidorDe(cx.rpcUrl);
   const [cuenta, fee] = await Promise.all([servidor.getAccount(fuente), feeDeInclusion(servidor)]);
   const contrato = new Contract(contratoId);
@@ -240,7 +255,7 @@ export async function invocarEn(
   if (resultado.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
     throw new Error(`la transacción no entró: ${resultado.status}`);
   }
-  return enviada.hash;
+  return { hash: enviada.hash, retorno: resultado.returnValue ?? null };
 }
 
 export const acreditar = (rondaId: number, miembro: string, f: Firmante) =>

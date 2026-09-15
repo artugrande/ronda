@@ -18,6 +18,8 @@ export type EstadoBilletera = {
   trustline: boolean;
   /** La cuenta existe en la red. */
   existe: boolean;
+  /** XLM en la wallet, en stroops: para las fees y para entrar pagando con XLM. */
+  xlm: bigint;
 };
 
 type Balance = {
@@ -29,18 +31,20 @@ type Balance = {
 
 export async function estadoBilletera(p: Pozo, usuario: string): Promise<EstadoBilletera> {
   const r = await fetch(`${p.horizon}/accounts/${usuario}`);
-  if (r.status === 404) return { saldo: 0n, trustline: !p.activo, existe: false };
+  if (r.status === 404) return { saldo: 0n, trustline: !p.activo, existe: false, xlm: 0n };
   if (!r.ok) throw new Error(`Horizon: HTTP ${r.status}`);
   const cuenta = (await r.json()) as { balances: Balance[] };
-  const linea = cuenta.balances.find((b) =>
-    p.activo
-      ? b.asset_code === p.activo.code && b.asset_issuer === p.activo.issuer
-      : b.asset_type === "native",
-  );
+  const nativa = cuenta.balances.find((b) => b.asset_type === "native");
+  const linea = p.activo
+    ? cuenta.balances.find(
+        (b) => b.asset_code === p.activo!.code && b.asset_issuer === p.activo!.issuer,
+      )
+    : nativa;
   return {
     saldo: linea ? aStroops(linea.balance) : 0n,
     trustline: p.activo ? linea != null : true,
     existe: true,
+    xlm: nativa ? aStroops(nativa.balance) : 0n,
   };
 }
 

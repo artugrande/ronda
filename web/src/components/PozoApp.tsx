@@ -25,11 +25,18 @@ import { aStroops, aTexto } from "@/lib/montos";
 import { conectar, desconectar, direccionActual, firmar } from "@/lib/wallet";
 import { porcentaje, tasaBlend, type TasaBlend } from "@/lib/blend";
 import { agregarTrustline, estadoBilletera, type EstadoBilletera } from "@/lib/billetera";
+import { cambiar, cotizar, type Cotizacion } from "@/lib/soroswap";
 import { Marco } from "@/components/Marco";
 import { BotonWallet } from "@/components/Wallet";
 import { Boton, Error as Aviso, Etiqueta, Panel, corta, explorer } from "@/components/ui";
 
-type Accion = null | "depositar" | "retirar" | "conectar" | "racha" | "trustline";
+type Accion = null | "depositar" | "cambiar" | "retirar" | "conectar" | "racha" | "trustline";
+
+/** Con qué paga el usuario: el token del pozo, o XLM que se cambia en Soroswap. */
+type Moneda = "pozo" | "xlm";
+
+/** XLM que hay que dejar en la wallet: la reserva de Stellar más fees. */
+const RESERVA_XLM = 15_000_000n;
 
 /** Cada cuántos segundos se relee el contrato. El premio crece solo. */
 const REFRESCO_S = 20;
@@ -109,6 +116,10 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
   const [accion, setAccion] = useState<Accion>(null);
   const [cargando, setCargando] = useState(true);
   const [referente, setReferente] = useState<string | null>(null);
+  const [moneda, setMoneda] = useState<Moneda>("pozo");
+  const [cotizacion, setCotizacion] = useState<Cotizacion | null>(null);
+  /** El monto en XLM que Soroswap no pudo cotizar, para no insistir. */
+  const [sinCotizacion, setSinCotizacion] = useState<bigint | null>(null);
   const ahora = useAhora();
   const ultimoEmpujon = useRef(0);
 
@@ -164,6 +175,31 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
     const t = setInterval(() => refrescar(direccion), REFRESCO_S * 1000);
     return () => clearInterval(t);
   }, [refrescar, pozo]);
+
+  // Cotización en vivo mientras se escribe un monto en XLM. Con espera, para
+  // no pedirle una simulación al RPC por cada tecla. La cotización guardada
+  // vale solo si es del monto que está escrito ahora; si no, se está pidiendo.
+  const entraXlm = moneda === "xlm" ? aStroops(monto) : null;
+  const cotizacionVigente =
+    entraXlm != null && entraXlm > 0n && cotizacion?.entra === entraXlm ? cotizacion : null;
+  const cotizando =
+    entraXlm != null && entraXlm > 0n && !cotizacionVigente && sinCotizacion !== entraXlm;
+  useEffect(() => {
+    if (!pozo || !yo || entraXlm == null || entraXlm <= 0n) return;
+    let vigente = true;
+    const t = setTimeout(async () => {
+      try {
+        const c = await cotizar(pozo, yo, entraXlm);
+        if (vigente) setCotizacion(c);
+      } catch {
+        if (vigente) setSinCotizacion(entraXlm);
+      }
+    }, 400);
+    return () => {
+      vigente = false;
+      clearTimeout(t);
+    };
+  }, [pozo, entraXlm, yo]);
 
   async function correr(cual: Exclude<Accion, null>, fn: () => Promise<void>) {
     setAccion(cual);
@@ -358,39 +394,119 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                       </button>
                     )}
                   </div>
-                  <input
-                    inputMode="decimal"
-                    placeholder={`Monto en ${pozo.simbolo}`}
-                    value={monto}
-                    onChange={(e) => setMonto(e.target.value)}
-                    className="input-monto mt-2"
-                  />
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      inputMode="decimal"
+                      placeholder={`Monto en ${moneda === "xlm" ? "XLM" : pozo.simbolo}`}
+                      value={monto}
+                      onChange={(e) => setMonto(e.target.value)}
+                      className="input-monto flex-1"
+                    />
+                    {pozo.entradaXlm && (
+                      <div className="flex gap-1" role="radiogroup" aria-label="Pagar con">
+                        {(["pozo", "xlm"] as const).map((m) => (
+                          <button
+                            key={m}
+                            role="radio"
+                            aria-checked={moneda === m}
+                            className={`btn btn-blanco ${moneda === m ? "seleccionado" : ""}`}
+                            onClick={() => setMoneda(m)}
+                            disabled={accion !== null}
+                          >
+                            {m === "xlm" ? "XLM" : pozo.simbolo}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {moneda === "xlm" && (
+                    <p className="mt-2 text-xs text-tenue">
+                      {cotizacionVigente ? (
+                        <>
+                          Tus {aTexto(cotizacionVigente.entra)} XLM son{" "}
+                          <span className="cifra font-bold text-foreground">
+                            ≈ {aTexto(cotizacionVigente.sale, 2)} {pozo.simbolo}
+                          </span>{" "}
+                          hoy en Soroswap. Se cambian en tu wallet y entra el {pozo.simbolo}: tu
+                          capital queda en dólares desde el primer segundo.
+                        </>
+                      ) : cotizando ? (
+                        "Cotizando en Soroswap…"
+                      ) : sinCotizacion != null && sinCotizacion === entraXlm ? (
+                        "Soroswap no cotiza ese monto. Probá con otro."
+                      ) : (
+                        `Poné un monto en XLM y te digo cuánto ${pozo.simbolo} es hoy.`
+                      )}
+                    </p>
+                  )}
                   <div className="mt-3 grid grid-cols-2 gap-2">
-                    <Boton
-                      onClick={() =>
-                        correr("depositar", async () => {
-                          const m = montoValido();
-                          if (m == null) return;
-                          if (vista.tope > 0n && vista.principal + m > vista.tope) {
-                            setError(
-                              `El pozo tiene un tope de ${aTexto(vista.tope, 0)} ${pozo.simbolo} y ya hay ${aTexto(vista.principal, 0)}.`,
+                    {moneda === "xlm" ? (
+                      <Boton
+                        onClick={() =>
+                          correr("cambiar", async () => {
+                            const entra = montoValido();
+                            if (entra == null) return;
+                            if (billetera && entra > billetera.xlm - RESERVA_XLM) {
+                              setError(
+                                `Tenés ${aTexto(billetera.xlm)} XLM. Dejá al menos 1,5 XLM para la reserva de Stellar y las fees.`,
+                              );
+                              return;
+                            }
+                            // Cotización fresca al momento de firmar, no la de la pantalla.
+                            const c = await cotizar(pozo, yo, entra);
+                            setCotizacion(c);
+                            if (vista.tope > 0n && vista.principal + c.sale > vista.tope) {
+                              setError(
+                                `El pozo tiene un tope de ${aTexto(vista.tope, 0)} ${pozo.simbolo} y ya hay ${aTexto(vista.principal, 0)}.`,
+                              );
+                              return;
+                            }
+                            const recibido = await cambiar(pozo, yo, c, firmante);
+                            setAviso(
+                              `✓ Cambiaste ${aTexto(entra)} XLM por ${aTexto(recibido)} ${pozo.simbolo}. Ahora firmá el depósito.`,
                             );
-                            return;
-                          }
-                          if (referenteAplica) {
-                            await depositarConReferente(pozo, yo, m, referente!, firmante);
-                          } else {
-                            await depositar(pozo, yo, m, firmante);
-                          }
-                          setMonto("");
-                          await refrescar(yo);
-                        })
-                      }
-                      cargando={accion === "depositar"}
-                      disabled={accion !== null || sinTrustline}
-                    >
-                      Depositar
-                    </Boton>
+                            if (referenteAplica) {
+                              await depositarConReferente(pozo, yo, recibido, referente!, firmante);
+                            } else {
+                              await depositar(pozo, yo, recibido, firmante);
+                            }
+                            setMonto("");
+                            setAviso(`✓ ${aTexto(recibido)} ${pozo.simbolo} en el pozo.`);
+                            await refrescar(yo);
+                          })
+                        }
+                        cargando={accion === "cambiar"}
+                        disabled={accion !== null || sinTrustline || !cotizacionVigente}
+                      >
+                        Cambiar y depositar
+                      </Boton>
+                    ) : (
+                      <Boton
+                        onClick={() =>
+                          correr("depositar", async () => {
+                            const m = montoValido();
+                            if (m == null) return;
+                            if (vista.tope > 0n && vista.principal + m > vista.tope) {
+                              setError(
+                                `El pozo tiene un tope de ${aTexto(vista.tope, 0)} ${pozo.simbolo} y ya hay ${aTexto(vista.principal, 0)}.`,
+                              );
+                              return;
+                            }
+                            if (referenteAplica) {
+                              await depositarConReferente(pozo, yo, m, referente!, firmante);
+                            } else {
+                              await depositar(pozo, yo, m, firmante);
+                            }
+                            setMonto("");
+                            await refrescar(yo);
+                          })
+                        }
+                        cargando={accion === "depositar"}
+                        disabled={accion !== null || sinTrustline}
+                      >
+                        Depositar
+                      </Boton>
+                    )}
                     <Boton
                       variante="peligro"
                       onClick={() =>
@@ -407,7 +523,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                         })
                       }
                       cargando={accion === "retirar"}
-                      disabled={accion !== null || miSaldo === 0n}
+                      disabled={accion !== null || miSaldo === 0n || moneda === "xlm"}
                     >
                       Retirar
                     </Boton>
@@ -415,6 +531,7 @@ export function PozoApp({ pozo, activo }: { pozo: Pozo | null; activo: "app" | "
                   <p className="mt-3 text-xs text-tenue">
                     Retirás cuando quieras, sin penalidad, aunque haya un sorteo en curso. Tu
                     capital nunca está en juego.
+                    {moneda === "xlm" && ` Los retiros son siempre en ${pozo.simbolo}.`}
                   </p>
                 </>
               ) : (

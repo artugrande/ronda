@@ -100,6 +100,11 @@ Retirar funciona siempre: sin penalidad, sin esperar el sorteo, sin permiso.
   USDC del pool Fixed de Blend v2 (~8 % anual; XLM ahí paga 0 %). Pozo de
   prueba en testnet (`/test`) en XLM con rondas de 10 minutos.
 
+- Entrar pagando con XLM: la app cotiza en Soroswap, cambia en la wallet del
+  usuario y deposita lo que salió. Dos firmas. El pozo no lo ve: recibe USDC
+  como siempre, y la garantía de no perder capital no cambia. Otros tokens
+  (USDT0, cuando Blend lo preste) entran por el mismo camino.
+
 ### Pendiente antes de la submission
 
 - Prueba del flujo completo desde la app con Freighter.
