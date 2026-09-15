@@ -141,7 +141,11 @@ function entradasDe(red: Red): Pozo["entradas"] {
   if (!t.activo) return null;
   const xlm = XLM_SAC[red];
   const monedas: Entrada[] = [{ simbolo: "XLM", token: xlm, activo: null, caminos: [[xlm, t.id]] }];
-  if (red === "mainnet") {
+  // Soroswap todavía no tiene par de USDT0 (verificado el 15/09/2026: ni
+  // directo con USDC ni por XLM). La opción queda apagada hasta que aparezca
+  // liquidez ahí o se sume otra vía de cambio.
+  const USDT0_HABILITADO = false;
+  if (red === "mainnet" && USDT0_HABILITADO) {
     monedas.push({
       simbolo: "USDT0",
       token: USDT0_MAINNET.token,
