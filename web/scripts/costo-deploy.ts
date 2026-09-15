@@ -9,6 +9,7 @@
  * firma ni gasta nada). Red: mainnet (por defecto) o testnet.
  */
 
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { Operation, TransactionBuilder, rpc } from "@stellar/stellar-sdk";
 import { PASSPHRASE, RPC, type Red } from "../src/lib/config";
@@ -22,6 +23,11 @@ async function main() {
     process.exit(2);
   }
   const red: Red = redArg === "testnet" ? "testnet" : "mainnet";
+
+  // Compilar primero: un WASM viejo en target/ es el que ya está en la red y
+  // simula casi gratis, y eso no dice nada del que se va a subir.
+  console.log("compilando los contratos…");
+  execSync("stellar contract build", { cwd: "..", stdio: ["ignore", "ignore", "inherit"] });
   const servidor = new rpc.Server(RPC[red]);
   const cuenta = await servidor.getAccount(cuentaId);
 
