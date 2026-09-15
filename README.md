@@ -1,244 +1,229 @@
 # Zorrito
 
-Ahorro premiado sin pérdida de capital, sobre Stellar.
-Ponés plata en un pozo, el pozo genera rendimiento en Blend, y cada semana uno
-de los participantes se lleva el rendimiento de todos. El capital de cada uno
-queda intacto y se retira cuando se quiera.
+**Prize-linked savings on Stellar. Nobody loses. One person wins the yield.**
 
-**Argentina Builder Challenge** (BAF × Stellar) · Track Genesis
-Hackathon 12 → 26/09/2026 · Checkpoints 21 y 24/09 · Submission 27/09
+You put money into a shared pool. The pool lends it on Blend and earns
+interest. Once a week, one participant wins the interest everyone generated.
+Everybody else keeps exactly what they put in, and can withdraw at any time.
+
+- **App:** https://stellar.zorrito.app
+- **How it works:** https://stellar.zorrito.app/docs
+- **Testnet playground** (10-minute rounds): https://stellar.zorrito.app/test
+
+Built for the **Argentina Builder Challenge** (BAF × Stellar), Genesis track.
+Live on Stellar mainnet with real money since September 2026.
 
 ---
 
-## Empezá acá
+## What it does
 
-| Leé esto | Para |
-|---|---|
-| **[PRODUCTO.md](PRODUCTO.md)** | Qué es Zorrito, por qué, alcance, riesgos y criterios del jurado |
-| **[CLAUDE.md](CLAUDE.md)** | Gotchas de Soroban, Blend, drand y direcciones — se autocarga en Claude Code |
-| [GAPS.md](GAPS.md) | Por qué esta idea: análisis de 812 proyectos del ecosistema |
-| [EVM-GAPS.md](EVM-GAPS.md) | 50 primitivas EVM vs. Stellar |
-| [IDEAS.md](IDEAS.md) | Las otras 44 ideas que descartamos |
-| [SETUP.md](SETUP.md) | Toolchain y MCP |
+1. **Deposit USDC.** It goes straight into Blend as a Supply position and
+   starts earning at once. No minimum. You can also pay with **XLM or
+   USDT0**: the app quotes Soroswap and the classic Stellar DEX at the same
+   time and swaps through whichever pays more, in your wallet, before
+   depositing. The pool itself only ever holds USDC.
+2. **The round runs.** One week on mainnet. Every second your money is in
+   adds to your weight: `deposit × time`. Marking "I saved today" seven days
+   in a row doubles your odds. Friends who join through your link add 10 %
+   of their capital to your weight.
+3. **The round closes.** Anyone can close it once it expires. The prize
+   (everything the pool earned) and everyone's weight are frozen. The
+   contract picks a **future** drand round that will decide the winner.
+4. **drand publishes.** Anyone brings the signature. The contract verifies
+   it on-chain with BLS12-381 and picks the winner proportionally to weight.
+5. **One person gets paid.** The prize goes to the winner's wallet in the
+   same transaction. Everyone else still has exactly what they deposited.
+   The next round has already started.
 
-> **Zorrito es el pozo.** Este repo arrancó como ronda rotativa (la vaquita)
-> y ese contrato sigue acá, funcionando y desplegado en testnet, en
-> `contracts/ronda` y en la ruta `/ronda` de la web. Pero el producto es **el
-> pozo: ahorro premiado sin pérdida de capital**, el hueco que `GAPS.md` y
-> `EVM-GAPS.md` marcan como el único con cero competidores entre 812
-> proyectos. Ver [§El pozo](#el-pozo).
+Withdrawing always works: no penalty, no waiting for the draw, no permission.
 
-## El pozo
+## What makes it different
 
-`contracts/pozo/`. Todos depositan en un pozo común que se pone a generar
-rendimiento. Al cierre de cada ronda **se sortea el rendimiento entero** entre
-los participantes: uno se lo lleva, **nadie pierde capital**, y el capital se
-puede retirar cuando sea, sin penalidad.
+- **No roles.** No admin, no pause, no key that can touch funds or influence
+  the draw. Closing a round and running the draw are permissionless.
+- **Randomness nobody can bias.** Nothing from the ledger is used as a seed.
+  The winner comes from a [drand](https://drand.love) quicknet signature for
+  a round that did not exist when the pool closed, verified inside the
+  contract with the BLS12-381 host functions of Protocol 22. Biasing it would
+  take a majority of the ~20 organisations that run drand.
+- **No keeper dependency.** A serverless keeper closes rounds and runs draws,
+  and so does every visit to the app that finds work to do. If the keeper
+  disappears, the first person to open the app unblocks the pool.
+- **Built for a million accounts from day one.** Weights live in a Fenwick
+  tree over contract storage with capacity 2^20. Deposit, withdraw and draw
+  touch ~21 storage entries whether there are 2 participants or 1,000,000.
+- **Fair by construction.** Weight is money × time, the same proportion in
+  which each participant generated the prize. Jumping in with a lot of money
+  a minute before the close barely counts.
 
-| Función | Quién | Qué hace |
+## Architecture
+
+```
+contracts/pozo/            the pool: deposits, weights, close, drand-verified draw, streak, referrals, cap
+contracts/blend_adapter/   Supply position on Blend v2 behind a 3-function interface
+contracts/mock_rendimiento a yield source for tests and local demos
+web/                       Next.js app, serverless keeper, scripts
+scripts/                   deploy scripts (testnet and mainnet)
+```
+
+**Pool contract** (`contracts/pozo`, Rust / Soroban SDK 27). Entry points:
+
+| Function | Who | What |
 |---|---|---|
-| `depositar(usuario, monto)` | el usuario | entra al pozo y al sorteo |
-| `retirar(usuario, monto)` | el usuario | saca capital, siempre, aunque haya un sorteo pendiente |
-| `cerrar_ronda()` | **cualquiera** | congela chances y premio; fija una ronda de drand ≥ 10 min en el futuro |
-| `ejecutar_sorteo(firma)` | **cualquiera** | verifica la firma BLS de drand on-chain, elige ganador, paga |
-| `estado()` | — | participantes, total, premio, APY, countdown, ronda de drand pendiente |
-| `chances_bps(usuario)` | — | "tu probabilidad", para la UI |
+| `depositar(user, amount)` / `depositar_con_referente(user, amount, referrer)` | the user | join the pool and the draw |
+| `retirar(user, amount)` | the user | take capital out, always, even mid-draw |
+| `ahorrar_hoy(user)` | the user | mark the daily streak |
+| `cerrar_ronda()` | **anyone** | freeze weights and prize; pin a drand round ≥ 10 min in the future |
+| `ejecutar_sorteo(signature)` | **anyone** | verify the drand BLS signature on-chain, pick the winner, pay |
+| `estado()`, `cuenta_de(user)`, `chances_bps(user)` | read-only | pool state, account state, "your odds" |
 
-**El azar sale de [drand](https://drand.love)**, no de Stellar. Es un beacon
-público producido por ~20 organizaciones independientes con una firma BLS
-umbral, una ronda cada 3 segundos. Al cerrar se fija una ronda futura; nadie
-—ni quien cierra, ni un validador de Stellar— conoce su firma todavía. Cuando
-sale, cualquiera la trae y el contrato la verifica con las host functions
-BLS12-381 del Protocolo 22. Sin keeper privilegiado, sin secreto que alguien
-pueda perder: el premio no queda rehén de nadie.
+The weight `deposit × time` enters the tree by linearity (`a·T − b`, two
+coefficients that sum over prefixes). Closing copies nothing: the new round
+starts at the close and the closed round's weights stay frozen in the tree by
+lazy versioning. Measured: a deposit's footprint is 23–30 writes with 1 or
+with 1,001 accounts, and a draw with 1,001 accounts costs 45M instructions
+against a 100M limit.
 
-Lo que queda como supuesto de confianza es drand mismo (haría falta que una
-mayoría de sus organizaciones se coludan), y es público y verificable.
+**Blend adapter** (`contracts/blend_adapter`). A single Supply (non-collateral)
+position on a Blend v2 pool: it earns interest and cannot be liquidated.
+Tested against Blend's real bytecode. Blend rounds b-tokens down on deposit,
+so a withdrawal of the exact amount could come up one stroop short; the
+adapter asks the pool for one stroop extra and pays the exact amount from its
+own balance, keeping the remainder as a dust fund.
 
-Peso = **depósito × tiempo**. Entrar un minuto antes del cierre con diez veces
-más plata da menos chances que haber estado toda la ronda. La fuente de
-rendimiento va detrás de una interfaz mínima (`depositar`, `retirar`,
-`balance`): `contracts/mock_rendimiento/` es la de tests y demo, Blend se
-enchufa detrás sin tocar el sorteo. **Escala a un millón de cuentas desde el día cero.** Ninguna operación lee a
-todos los participantes: cada cuenta es una entrada de storage y las chances
-viven en un Fenwick tree sobre storage con capacidad 2^20. Depositar, retirar y
-sortear tocan a lo sumo 21 nodos cada uno, haya diez cuentas o un millón. El
-peso depósito × tiempo entra en el árbol por linealidad (`a·T − b`, dos
-coeficientes que suman por prefijos), y al cerrar no se copia nada: la ronda
-nueva arranca en el cierre y las chances de la cerrada quedan congeladas en el
-árbol por versionado perezoso. Medido: el footprint de un depósito es de 23–30
-escrituras con 1 o con 1.001 cuentas, y el sorteo con 1.001 cuentas cuesta 45M
-instrucciones sobre un límite de 100M por transacción.
+**Web app** (`web/`). Next.js 16, Tailwind 4, `@stellar/stellar-sdk` 17,
+Stellar Wallets Kit (Freighter, xBull, Lobstr). Prize growing live, countdown
+to the second, Blend APY read from the pool, streak, referral link, swap-in
+from XLM or USDT0, human-readable status messages with a link to every
+transaction. Deployed on Vercel.
 
-```bash
-scripts/ensayo-pozo-testnet.sh     # fuente mock + pozo con la clave real de drand
-cd web && SOLO_MIRAR=1 npm run keeper
-```
+**Keeper** (`web/src/app/api/keeper/route.ts`). The same logic as the CLI
+script, as a serverless function triggered by cron and by page visits.
 
-## Estado
+## Addresses
 
-- ✅ Investigación cerrada, producto definido
-- ✅ Workspace Soroban scaffoldeado y compilando a WASM
-- ✅ 8 skills oficiales de Stellar incluidas en `.claude/skills/`
-- ✅ **Contrato `pozo`** — depósitos, retiro libre, peso depósito × tiempo,
-  sorteo por firma de drand verificada on-chain (BLS12-381), sin roles
-  privilegiados, Fenwick tree sobre storage con capacidad para un millón de
-  cuentas. 50 tests, footprint y costo medidos
-- ✅ Keeper permissionless del pozo (`web/scripts/keeper.ts`) y helper que
-  descomprime la clave de drand para el deploy
-- ✅ **Pozo corriendo en testnet con el mock**:
-  `CB5X4AGGESZWVWLUFMJY7CQJMEA4WR4W7TOSE5V4QM3F5O6IMLBU22FY` (fuente mock
-  `CDJFOATXNVBZO73S3IMXVD4XYR6AEBVCTDUDWMLMX4ZS2WTPAHEAPOFW`, rondas de
-  10 min). Más de 20 rondas seguidas cerradas y sorteadas por el keeper con
-  firmas reales de drand quicknet: la verificación BLS on-chain está probada
-  contra la red. El primer intento sacó a la luz un árbol de autorización mal
-  armado que los tests no veían (ver `CLAUDE.md`)
-- ✅ **Pozo de prueba en testnet con Blend** (`/test`):
-  `CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2`, a través del
-  adapter `CCHLQA7SGZAEVGLAFUL4Y6DMBG7ZUZYSZZ7AGN44GNNJCCJ6VECV7ISA` sobre el
-  pool TestnetV2 `CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF`.
-  Rondas de 10 min, con racha y referidos. Los depósitos atraviesan las tres
-  autorizaciones anidadas y el pool paga interés real. El anterior
-  (`CCAM3QUE…HWHRZ`, sin racha) sorteó decenas de rondas y sigue vivo
-- ✅ **App en https://stellar.zorrito.app**, con el estilo de Zorrito: la
-  home es el pozo de mainnet y `/test` el de prueba; premio creciendo en
-  vivo, countdown con segundos, APY de Blend, tu posición, depositar en
-  USDC o entrando con XLM o USDT0, retirar, racha, referidos, últimos
-  ganadores leídos de los eventos, y `/docs` con cómo está hecho, el azar,
-  Blend, contratos y riesgos. La ronda rotativa quedó en `/ronda`
-- ✅ **Adapter de Blend** (`contracts/blend_adapter/`): Supply no colateral en
-  un pool de Blend v2, testeado contra el bytecode real del protocolo. 10 tests
-  propios más el pozo operando a través de él. Cubre el redondeo de Blend
-  con un fondo de polvo en el adapter (un stroop de más en cada retiro). Lo que no cubre ningún test es
-  el devengo del interés, porque Blend solo genera cuando alguien pide
-  prestado — eso se ve recién en un pool con actividad
+**Mainnet** (the home page): USDC, weekly rounds, 5,000 USDC cap.
 
-- ✅ **Keeper serverless** (`web/src/app/api/keeper/route.ts`): la misma
-  lógica que el script, como función en Vercel. La dispara un cron y cada
-  visita a la página que encuentra una ronda vencida o un sorteo pendiente
-- ✅ Script para enchufar Blend real en testnet
-  (`scripts/enchufar-blend-testnet.sh`), con `VARIANTE=semanal` para el pozo
-  de 7 días
-- ✅ **Racha diaria y referidos en el contrato**, en la misma unidad que el
-  peso (plata × tiempo): siete días seguidos de "ahorré hoy" duplican las
-  chances; cada referido suma el 10 % de su capital con tope de la mitad del
-  propio. Tope de capital por pozo para mainnet. 50 tests
-- ✅ App con dos pozos: la home apunta al de mainnet (semanal) y `/test` al
-  de testnet (10 min), enlazado solo desde Docs. Racha, link de invitación y
-  referidos en pantalla
-- ✅ **Zorrito en mainnet**: pozo `CBPOMGHGCWH2QMG4V4FTZKGBCEN7K37R2OIDGD5VWBAKYTOWG7CDCGGA`
-  (USDC, semanal, tope 5.000) a través del adapter
-  `CD5XQWHFSW427KOQAMAXBMMM6X4BIH6AXZUP76PBB6SWYSSAA4D53MKC` sobre la reserva
-  de USDC del pool Fixed de Blend v2
-  `CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD`. Es el pozo de la
-  home. (El primer deploy, `CAR46DV7…UKQP`, era de XLM: Blend paga 0 % por XLM
-  y el retiro chocaba con el redondeo del pool; quedó abandonado, vacío.)
-- ✅ Entrar pagando con XLM o USDT0: la app cotiza en Soroswap y en el DEX
-  clásico, cambia por el que más da en la wallet del usuario, y deposita el
-  USDC que salió. El pozo no lo ve
+| | |
+|---|---|
+| Pool | `CBPOMGHGCWH2QMG4V4FTZKGBCEN7K37R2OIDGD5VWBAKYTOWG7CDCGGA` |
+| Blend adapter | `CD5XQWHFSW427KOQAMAXBMMM6X4BIH6AXZUP76PBB6SWYSSAA4D53MKC` |
+| Blend v2 pool (Fixed) | `CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD` |
+| Soroswap router | `CAG5LRYQ5JVEUI5TEID72EYOVX44TTUJT5BQR2J6J77FH65PCCFAJDDH` |
 
-### Riesgos, sin maquillaje
+**Testnet** (`/test`): XLM, 10-minute rounds, for seeing the whole cycle in
+minutes.
 
-- **Liquidez de Blend (medio).** El capital está prestado. Si el pool tiene
-  casi toda su liquidez tomada, un retiro puede fallar hasta que alguien
-  devuelva o deposite. No se pierde capital, pero puede haber que esperar.
-  Blend sube las tasas con la utilización para que eso dure poco.
-- **Protocolo Blend (medio).** Un bug en Blend afecta al pozo como a cualquier
-  prestamista. Blend v2 está auditado; el riesgo no es cero.
-- **drand (bajo).** Si deja de publicar, no hay sorteo hasta que vuelva. El
-  capital se retira igual, con o sin sorteo pendiente.
-- **Keeper (bajo).** No hay dependencia: cualquiera cierra y sortea, y la app
-  lo hace sola en cada visita que encuentra trabajo.
-- **Renta de storage (bajo).** Las entradas de cuentas inactivas durante
-  meses vencen si nadie las extiende. Cualquiera puede; falta automatizarlo
-  en el keeper.
-- **Sin auditoría (medio).** Construido desde cero en el hackathon. Por eso
-  el pozo de mainnet tiene un tope de capital fijo en el contrato.
+| | |
+|---|---|
+| Pool | `CDNKUQX5YT5JYDF2UB3NZXI7UFKRKUTU7W23P42TLXUTGY4WE5IZI5X2` |
+| Blend adapter | `CCHLQA7SGZAEVGLAFUL4Y6DMBG7ZUZYSZZ7AGN44GNNJCCJ6VECV7ISA` |
+| Blend v2 pool (TestnetV2) | `CCEBVDYM32YNYCVNRXQKDFFPISJJCV557CDZEIRBEE4NCV4KHPQ44HGF` |
 
-### Enchufar Blend en vez del mock
+All addresses are fixed in `web/src/lib/config.ts`. A new deploy is a commit.
+
+## Status
+
+- Pool contract with drand-verified draws, streak, referrals and capital cap.
+  50 tests, footprint and cost measured.
+- Blend adapter with dust fund, 10 tests, plus the pool operating through it
+  against Blend's real bytecode.
+- Testnet pool on Blend TestnetV2 with dozens of consecutive rounds drawn
+  with real drand signatures.
+- Mainnet pool on Blend's Fixed USDC reserve (~8 % APY to lenders at launch).
+- Tested end to end on mainnet with real money, from the app with Freighter:
+  swap from XLM to USDC through Soroswap and through the classic DEX, deposit
+  into Blend, full withdrawal. Example:
+  [f1a4be3a…](https://stellar.expert/explorer/public/tx/f1a4be3a828eb0bc704881ceedf24c6caf7c556aff2436b18d5fe87032b43271).
+
+Why USDC and not XLM: the prize is what borrowers pay, and on Stellar people
+borrow USDC. Blend's Fixed pool has the USDC reserve at ~80 % utilisation
+paying ~8 % to lenders; the XLM reserve sits at 0.1 % and pays 0 %.
+`web/scripts/apy-blend.ts` prints the live table.
+
+## Risks, stated plainly
+
+- **Blend liquidity (medium).** Capital is lent out. If the pool is almost
+  fully utilised, a withdrawal can fail until someone repays or deposits. No
+  capital is lost, but you may have to wait. Blend raises rates with
+  utilisation so that this does not last.
+- **Blend protocol (medium).** A bug in Blend affects the pool like any other
+  lender. Blend v2 is audited; the risk is not zero.
+- **drand (low).** If drand stops publishing there is no draw until it is
+  back. Capital can be withdrawn regardless.
+- **Keeper (low).** No dependency: anyone can close and draw, and the app
+  does it on every visit that finds work.
+- **Storage rent (low).** Entries of accounts idle for months expire unless
+  someone extends them. Anyone can; automating it in the keeper is pending.
+- **No audit (medium).** Built from scratch during the hackathon. That is why
+  the mainnet pool has a capital cap fixed in the contract.
+
+## Running it locally
 
 ```bash
-scripts/enchufar-blend-testnet.sh          # testnet: pool TestnetV2 de Blend, rondas de 10 min
-scripts/desplegar-mainnet.sh               # mainnet: pool Fixed de Blend, semanal, con tope
-POOL=C... scripts/enchufar-blend-testnet.sh # otro pool
-```
-
-El de mainnet necesita una identidad de la CLI con XLM (`IDENTIDAD`, por
-defecto `zorrito-mainnet`), deploya contra USDC (`ACTIVO`, o `native` para
-XLM) y pone un tope de capital (`TOPE`, 5.000 por defecto) porque es plata
-real en un contrato sin auditoría. `web/scripts/costo-deploy.ts` dice cuánto
-XLM hace falta antes de gastar. Las direcciones van fijas en
-`web/src/lib/config.ts`; la app no necesita variables en Vercel.
-
-Verifica que el pool tenga al token como reserva, deploya el adapter, deploya
-un pozo nuevo apuntando al adapter y le fija al adapter su dueño. El orden lo
-impone la construcción: el pozo se construye apuntando a la fuente, y el
-adapter no puede conocer al pozo antes de que exista. El de testnet deja
-`web/.env.local` apuntando al pozo nuevo; el de mainnet imprime la dirección
-para ponerla en `config.ts`.
-
-El adapter usa `Supply` (no colateral): la posición genera interés y no puede
-liquidarse, y no toca el oráculo. Los WASMs de Blend que usan los tests están
-en `contracts/blend_adapter/blend/`, tal como los publica `blend-contract-sdk`;
-no se usa ese crate como dependencia porque arrastra otra major de
-`soroban-sdk`. Direcciones de Blend en testnet: `blend-utils/testnet.contracts.json`.
-
-### Deploy en Vercel
-
-El proyecto de Vercel es la carpeta `web/`. Desde ahí, con la CLI:
-
-```bash
-cd web
-npx vercel link                       # crea el proyecto la primera vez
-npx vercel env add NEXT_PUBLIC_RED production     # testnet
-npx vercel env add NEXT_PUBLIC_POZO production    # la dirección del pozo
-npx vercel env add KEEPER_SECRET production       # la clave que paga fees (ver web/.env.local)
-npx vercel --prod
-```
-
-O desde el dashboard: importar el repo, **Root Directory = `web`**, y las
-mismas tres variables. Sin `KEEPER_SECRET` la app anda igual, pero el keeper
-solo mira.
-
-El keeper corre en `/api/keeper`. `web/vercel.json` lo dispara por cron una
-vez por día, que es lo máximo que permite el plan Hobby; en Pro cambiá el
-`schedule` a `*/5 * * * *`. Igual, cada visita a la página que encuentra una
-ronda vencida o un sorteo pendiente lo dispara también, así que con que
-alguien abra la app una vez por semana alcanza. Para verificarlo:
-
-```bash
-curl -s https://<tu-deploy>.vercel.app/api/keeper
-# {"ok":true,"firma":true,"paso":{"accion":"espera","detalle":"ronda 3: 2 participantes, ..."}}
-```
-
-## Setup local
-
-```bash
-# Contratos: rust-toolchain.toml fija la versión de Rust y el target
-# wasm32v1-none; rustup los instala solo al entrar al repo. No la bajes a
-# mano: la ventana es angosta, ver SETUP.md §Toolchain.
+# Contracts. rust-toolchain.toml pins the Rust version and the wasm32v1-none
+# target; rustup installs them on entering the repo. Do not install a
+# different Rust by hand: the compatible window is narrow (see SETUP.md).
 cargo test && stellar contract build
 
-# Web: necesita Node >= 22.12 (lo pide @stellar/stellar-sdk; web/.npmrc
-# corta el install en versiones menores).
+# Web. Node >= 22.12 is required by @stellar/stellar-sdk; web/.npmrc makes
+# npm install fail on older versions instead of warning.
 cd web && nvm use && npm install
 npm run typecheck && npm run lint && npm run build
 npm run dev
 ```
 
-Las direcciones de los pozos van fijas en `web/src/lib/config.ts`. Para
-apuntar el pozo de prueba a otro deploy en desarrollo, `NEXT_PUBLIC_POZO_LOCAL`
-en `web/.env.local`. Para el CLI de Stellar usá el binario precompilado, **no
-`cargo install`** (falla en un build script de `libdbus-sys`); ver
-[SETUP.md](SETUP.md).
+Point the testnet pool at another deploy during development with
+`NEXT_PUBLIC_POZO_LOCAL` in `web/.env.local`. For the Stellar CLI use the
+prebuilt binary, **not `cargo install`** (it fails in a `libdbus-sys` build
+script); see [SETUP.md](SETUP.md).
 
-Scripts útiles en `web/scripts/`: `apy-blend.ts` (qué paga cada reserva de
-Blend), `cotizar.ts` (cuánto USDC dan XLM o USDT0 en Soroswap y en el DEX),
-`costo-deploy.ts` (cuánto XLM cuesta subir los WASM), `keeper.ts` (el keeper
-en bucle, para una terminal).
+### Deploying a pool
 
-## El primer producto
+```bash
+scripts/enchufar-blend-testnet.sh   # testnet: Blend TestnetV2, 10-minute rounds
+scripts/desplegar-mainnet.sh        # mainnet: Blend Fixed, USDC, weekly, capped
+```
 
-El repo arrancó como una ronda rotativa (la vaquita) con aportes cross-chain
-en USDT0. Ese contrato sigue en `contracts/ronda` y en la ruta `/ronda`, y su
-documentación quedó en el historial de git. El producto es el pozo.
+The mainnet script needs a CLI identity with XLM (`IDENTIDAD`, default
+`zorrito-mainnet`), deploys against USDC (`ACTIVO`, or `native` for XLM) and
+sets a capital cap (`TOPE`, default 5,000). `web/scripts/costo-deploy.ts`
+simulates the WASM uploads and prints how much XLM you need before spending
+any. It checks the pool has the token as a reserve, deploys the adapter,
+deploys the pool pointing at the adapter, and sets the pool as the adapter's
+owner. The order is forced by construction: the pool is built pointing at its
+yield source, and the adapter cannot know the pool before it exists.
+
+### Keeper
+
+`web/vercel.json` runs `/api/keeper` by cron once a day (the Hobby plan
+maximum), and every page visit that finds an expired round or a pending draw
+triggers it too. `KEEPER_SECRET` in Vercel is the key that pays the fees;
+without it the function only reports what it would do.
+
+```bash
+cd web && SOLO_MIRAR=1 npm run keeper     # watch-only loop from a terminal
+```
+
+### Useful scripts (`web/scripts/`)
+
+| Script | What it does |
+|---|---|
+| `apy-blend.ts` | What every reserve of every Blend v2 pool pays lenders right now |
+| `cotizar.ts G... 10 USDT0` | How much USDC 10 USDT0 (or XLM) fetch on Soroswap and on the DEX, and which wins |
+| `costo-deploy.ts G...` | What uploading the WASMs would cost, simulated |
+| `keeper.ts` | The keeper as a loop for a terminal |
+| `drand-pk.ts` | Decompresses drand's group public key for the deploy |
+
+## Documents
+
+| Read this | For |
+|---|---|
+| **[PRODUCTO.md](PRODUCTO.md)** | The product: problem, idea, scope, risks and the jury's criteria (Spanish) |
+| **[CLAUDE.md](CLAUDE.md)** | Soroban, Blend and drand gotchas learned the hard way |
+| [GAPS.md](GAPS.md) / [EVM-GAPS.md](EVM-GAPS.md) | Why this idea: a survey of 812 ecosystem projects and 50 EVM primitives |
+| [IDEAS.md](IDEAS.md) | The 44 other ideas that were discarded |
+| [SETUP.md](SETUP.md) | Toolchain |
+
+The first commits of this repo were a different product, a rotating savings
+circle (`contracts/ronda`, still served at `/ronda`). Zorrito is the pool.
