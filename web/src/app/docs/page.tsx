@@ -438,6 +438,12 @@ export default function Docs() {
           de conseguir y XLM no necesita trustline, así que el pozo de prueba usa XLM. El
           contrato es el mismo con cualquier token que Blend acepte.
         </Faq>
+        <Faq q="¿Va a haber un pozo de USDT0?">
+          Cuando Blend lo preste. El pozo no sabe qué token es: un pozo nuevo es una entrada
+          más en la configuración, con su token y su pool. USDT0 llegó a Stellar en septiembre
+          de 2026 y todavía no tiene reserva en ningún pool de Blend, así que hoy no generaría
+          premio. Lo mismo vale para PYUSD, que sí está en YieldBlox pero con muy poca liquidez.
+        </Faq>
         <Faq q="¿Necesito algo en la wallet para entrar?">
           USDC y un poco de XLM para las fees. Si tu wallet todavía no acepta USDC, la app te
           ofrece agregarlo con un toque: es la trustline de Stellar, una sola vez.
