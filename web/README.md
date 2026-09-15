@@ -1,22 +1,20 @@
 # web
 
-Frontend mobile-first de Zorrito (el `pozo`, en `/`), la ronda rotativa (`/ronda`) y los scripts de keeper e indexer.
-
-La documentación vive en la [raíz del repo](../README.md). Lo mínimo:
+La app de Zorrito (Next.js), el keeper serverless (`/api/keeper`) y los
+scripts de terminal. La documentación vive en la [raíz del repo](../README.md).
 
 ```bash
 npm install
-cp .env.example .env.local   # y completá NEXT_PUBLIC_CONTRATO
-npm run dev
+npm run dev          # http://localhost:3000
 ```
 
 | Comando | |
 |---|---|
-| `npm run dev` | la app en http://localhost:3000 — `/` es el pozo, `/ronda` la ronda rotativa |
-| `npm run keeper` | cierra rondas del pozo y trae la firma de drand (arrancalo con `SOLO_MIRAR=1`) |
-| `npm test` | tests de la lógica de atribución y montos |
+| `npm run dev` | la app: `/` es el pozo de mainnet, `/test` el de prueba, `/docs` cómo funciona |
+| `npm run keeper` | cierra rondas y trae la firma de drand (arrancalo con `SOLO_MIRAR=1`) |
+| `npm test` | tests de drand y montos |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run indexer` | el watcher de `oft_received` (arrancalo con `SOLO_MIRAR=1`) |
+| `npm run lint` | eslint |
 
 `AGENTS.md` lo genera `create-next-app` y apunta a los docs de la versión de
 Next instalada. No lo borres: esta versión tiene breaking changes respecto de lo

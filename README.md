@@ -224,6 +224,3 @@ cd web && SOLO_MIRAR=1 npm run keeper     # watch-only loop from a terminal
 | [GAPS.md](GAPS.md) / [EVM-GAPS.md](EVM-GAPS.md) | Why this idea: a survey of 812 ecosystem projects and 50 EVM primitives |
 | [IDEAS.md](IDEAS.md) | The 44 other ideas that were discarded |
 | [SETUP.md](SETUP.md) | Toolchain |
-
-The first commits of this repo were a different product, a rotating savings
-circle (`contracts/ronda`, still served at `/ronda`). Zorrito is the pool.

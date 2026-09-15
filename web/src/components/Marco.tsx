@@ -7,8 +7,8 @@ import { LogoBlend, LogoStellar } from "@/components/Logos";
 
 /**
  * El marco común de todas las páginas: logo flotando, header de vidrio con
- * la navegación, y footer. La home y la ronda van sobre el paisaje; las
- * docs, sobre blanco (`docs`), para leer.
+ * la navegación, y footer. La app va sobre el paisaje; las docs, sobre
+ * blanco (`docs`), para leer.
  */
 export function Marco({
   activo,
@@ -18,7 +18,7 @@ export function Marco({
   red = RED,
   children,
 }: {
-  activo: "app" | "docs" | "ronda";
+  activo: "app" | "docs";
   docs?: boolean;
   /** Qué red muestra el footer. Cada pozo tiene la suya. */
   red?: Red;

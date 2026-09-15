@@ -18,7 +18,7 @@ function leerRed(valor: string | undefined): Red {
   return valor === "mainnet" ? "mainnet" : "testnet";
 }
 
-/** La red por defecto (la de la ronda rotativa y de lo que no es un pozo). */
+/** La red por defecto, para lo que no viene con un pozo. */
 export const RED = leerRed(process.env.NEXT_PUBLIC_RED);
 export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || RPC[RED];
 export const PASSPHRASE_RED = PASSPHRASE[RED];
@@ -202,15 +202,3 @@ export const POZOS: Pozo[] = [PRINCIPAL, TEST].filter(
 );
 
 export const pozoConfigurado = POZOS.length > 0;
-
-// ---------------------------------------------------------------------------
-// Ronda rotativa (el primer producto, sigue en /ronda)
-// ---------------------------------------------------------------------------
-
-/** Contract id del contrato `ronda` desplegado. Vacío hasta que haya deploy. */
-export const CONTRATO = process.env.NEXT_PUBLIC_CONTRATO || "";
-
-/** Qué ronda muestra la app. El contrato soporta varias por deploy. */
-export const RONDA_ID = Number(process.env.NEXT_PUBLIC_RONDA_ID || "0");
-
-export const configurado = CONTRATO.length > 0;

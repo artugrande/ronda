@@ -1,17 +1,7 @@
-/**
- * Conversión entre stroops y texto. Stellar maneja 7 decimales; el OFT recorta
- * el 7º antes de armar el mensaje cross-chain, así que acá vive todo lo que
- * tiene que saber de esa asimetría.
- */
+/** Conversión entre stroops y texto. Stellar maneja 7 decimales. */
 
 export const DECIMALES = 7;
 export const UNIDAD = 10_000_000n; // 1 unidad = 10^7 stroops
-
-/** Paso mínimo que sobrevive al viaje cross-chain. Espejo de `PASO_ETIQUETA`. */
-export const PASO_ETIQUETA = 10n;
-
-/** Espejo de `MAX_ETIQUETA` en el contrato. */
-export const MAX_ETIQUETA = 9_999n;
 
 /** Formatea stroops como texto con 7 decimales, sin ceros de cola sobrantes. */
 export function aTexto(stroops: bigint, decimalesMin = 2): string {
@@ -44,19 +34,4 @@ export function aStroops(texto: string): bigint | null {
   const stroops =
     BigInt(entera) * UNIDAD + BigInt(decimales.padEnd(DECIMALES, "0"));
   return negativo ? -stroops : stroops;
-}
-
-/**
- * `true` si el monto puede llevar etiqueta cross-chain: el 7º decimal tiene que
- * ser cero, porque el OFT lo recorta y la etiqueta se perdería.
- *
- * Es el mismo guard que aplica `crear_ronda` on-chain.
- */
-export function admiteEtiqueta(stroops: bigint): boolean {
-  return stroops > 0n && stroops % PASO_ETIQUETA === 0n;
-}
-
-/** La parte etiquetada de un monto, en unidades de etiqueta. */
-export function etiquetaDe(montoTurno: bigint, etiquetado: bigint): bigint {
-  return (etiquetado - montoTurno) / PASO_ETIQUETA;
 }

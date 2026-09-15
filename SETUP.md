@@ -34,7 +34,7 @@ con `rustc X is not supported by the following packages` recién después de baj
 178 crates. Instalá rustup desde https://rustup.rs y el problema desaparece.
 
 ```bash
-cd web && npm install    # front + indexer
+cd web && npm install    # la app y el keeper
 ```
 
 Para el CLI, **usá el binario precompilado, no `cargo install`**: compilar desde

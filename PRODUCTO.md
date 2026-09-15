@@ -8,10 +8,6 @@ uno queda intacto y se retira cuando se quiera.
 **App:** https://stellar.zorrito.app · **Docs:** https://stellar.zorrito.app/docs
 **Repo:** https://github.com/artugrande/zorrito
 
-> Este repo arrancó como una ronda rotativa (la vaquita). Ese contrato sigue
-> en `contracts/ronda` y en `/ronda`, pero el producto es el pozo. Este
-> documento describe el pozo.
-
 ---
 
 ## El problema
