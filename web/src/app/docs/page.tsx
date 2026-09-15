@@ -463,6 +463,15 @@ export default function Docs() {
           día que la tenga, es una entrada más en la configuración: el contrato no sabe qué
           token es.
         </Faq>
+        <Faq q="¿Y el mínimo de 5 dólares que pide Blend?">
+          No aplica. Ese mínimo es de <em>colateral</em>, y el contrato del pool solo lo chequea
+          cuando una posición tiene deuda: existe para que nadie deje un préstamo con un colateral
+          tan chico que no valga la pena liquidarlo. Zorrito solo presta (Supply sin colateral) y
+          nunca pide prestado, así que el pool nunca evalúa ese mínimo sobre su posición. Además,
+          el pozo tiene una sola posición en Blend que agrega los depósitos de todos: quien pone
+          0,50 USDC no abre una posición propia, suma a la del pozo. Está probado en mainnet con
+          depósitos de menos de un dólar.
+        </Faq>
         <Faq q="¿Necesito algo en la wallet para entrar?">
           USDC y un poco de XLM para las fees. Si tu wallet todavía no acepta USDC, la app te
           ofrece agregarlo con un toque: es la trustline de Stellar, una sola vez.
